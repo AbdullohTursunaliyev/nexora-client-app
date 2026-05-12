@@ -31,7 +31,14 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.local
 .env*.local
+# .env.example IS committed; see lib/api/config.ts
+
+# AI assistant working directory (worktrees, agent memory, session
+# state). Local-only — never push to remote.
+.claude/
 
 # typescript
 *.tsbuildinfo
