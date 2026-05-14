@@ -24,6 +24,7 @@ import { useToast } from '../components/common/Toast';
 import { getErrorMessage } from '../lib/api/client';
 import * as packagesApi from '../lib/api/services/packages';
 import type { PackageItem, BookingSlot } from '../lib/api/services/packages';
+import { useSelectedZone } from '../lib/state/useSelectedZone';
 
 function formatPriceLabel(amount: number, unit: string): string {
   return `${amount.toLocaleString('ru-RU').replace(/,/g, ' ')} ${unit}`;
@@ -68,11 +69,13 @@ export default function TimeSelectScreen() {
   const t = useT();
   const toast = useToast();
   const insets = useSafeAreaInsets();
-  // (Removed `useSelectedZone()` import — the slot endpoint accepts
-  // a `zone_id` filter but the FE's booking flow only tracks a
-  // stringified zone key (`'pc'` / `'vip'` / `'ps5'`), not the BE's
-  // numeric id, so the filter goes unwired today. When zone-select
-  // tracks the numeric id, plumb it back through here.)
+  // Numeric BE zone id, written by seat-select once it resolves the
+  // FE-category bucket to a specific BE zone row. We forward this to
+  // listBookingSlots so peak-pricing windows scope correctly to the
+  // user's actual zone — pre-fix the slot list always used the
+  // tenant's default windows, missing zone-specific surcharges.
+  // Audit finding #10.
+  const { beZoneId } = useSelectedZone();
 
   // Tab state was removed earlier (the Hourly tab was a dead switch
   // duplicating the package list). Kept as a single-column package
@@ -86,6 +89,14 @@ export default function TimeSelectScreen() {
   // `selectedPackageId` changes.
   const [packages, setPackages] = useState<PackageItem[]>([]);
   const [slots, setSlots] = useState<BookingSlot[]>([]);
+  // `slotsDate` is the BE-provided YYYY-MM-DD that the rendered slots
+  // belong to. Pre-fix the FE assumed "today" everywhere downstream
+  // (payment.tsx rebuilt start_at as `today + hh:mm`) — if the user
+  // lingered past midnight or the BE rolled the slot list forward to
+  // tomorrow, the two date assumptions diverged and the user got
+  // booked on the wrong day. Carrying the BE date forward through
+  // the booking flow is the fix. Audit finding #6.
+  const [slotsDate, setSlotsDate] = useState<string | null>(null);
   const [packagesLoading, setPackagesLoading] = useState(true);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
@@ -139,18 +150,20 @@ export default function TimeSelectScreen() {
     packagesApi
       .listBookingSlots({
         durationMin: selectedPackage.duration_min,
-        // zoneId from the booking flow is a string key ('pc' / 'vip' /
-        // 'ps5'). The BE filter wants a numeric zone_id which the FE
-        // doesn't have at this stage — the zone-select screen tracks
-        // a stringified key, not the DB id. Leaving zone_id off means
-        // pricing windows aren't filtered by zone here; that's OK
-        // because they're used only to flag peak hours, not to drive
-        // pricing on this screen. When the zone-flow tracks the
-        // numeric id end-to-end, wire it through here.
+        // Numeric BE zone id when seat-select has resolved it (which
+        // it has, since the booking flow runs zone → seat → time).
+        // Without it the BE returns slots scoped to the tenant's
+        // default pricing windows; with it, slots are scoped to the
+        // user's specific zone — so a "VIP zone" peak surcharge
+        // shows up only when the user actually picked a VIP seat.
+        zoneId: beZoneId ?? null,
       })
       .then((res) => {
         if (cancelled) return;
         setSlots(res.slots);
+        // Record the BE-supplied date alongside the slots so payment
+        // can build start_at without re-guessing "today vs tomorrow".
+        setSlotsDate(res.date || null);
         // Drop a previously-selected time that's no longer in the
         // new slot list (e.g. user picked 14:00 with a 1h package,
         // then switched to a 4h package whose latest slot is 12:00).
@@ -291,6 +304,13 @@ export default function TimeSelectScreen() {
                 priceAmount: String(selectedPackage.price),
                 durationHours: String(durationHours),
                 startTime: selectedTime,
+                // Pass the BE-supplied slot date so payment.tsx
+                // doesn't re-guess "today vs tomorrow" from the
+                // local clock. Falls back to "" when the BE was
+                // offline (slots load failed); payment treats that
+                // as legacy "today + rollover" behaviour. Audit
+                // finding #6.
+                startDate: slotsDate ?? '',
               },
             });
           }}

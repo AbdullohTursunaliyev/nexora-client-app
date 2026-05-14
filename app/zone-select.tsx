@@ -22,7 +22,13 @@ import type { Pc } from '../lib/api/types';
 interface Zone {
   id: string;
   available: number;
-  pricePerHour: number;
+  /**
+   * Hourly price in the tenant's currency. Null when the BE has no
+   * per-zone price configured for this tenant — the UI then renders
+   * "Set at club" instead of inventing a fallback number. Audit
+   * finding #9.
+   */
+  pricePerHour: number | null;
   imageUri: string;
   isRoom: boolean;
 }
@@ -96,18 +102,28 @@ export default function ZoneSelectScreen() {
   // Pre-fix the `?? 48` / `?? 12` / `?? 8` fallbacks invented fake
   // capacity numbers whenever `listPcs()` failed or returned an empty
   // list, so a tenant with zero PCs would still show "48 free PCs"
-  // and book the user onto a non-existent seat. The price falls back
-  // to the per-zone catalogue price (20k / 35k / 25k) only because
-  // the BE doesn't publish a per-zone price yet — and only when the
-  // BE itself returned 0/null for price, never to mask missing data.
-  const zones: (Zone & { title: string; description: string; unit: string })[] = useMemo(
+  // and book the user onto a non-existent seat.
+  //
+  // Price: pre-fix this fell back to 20k/35k/25k zone catalogue prices
+  // when the BE returned 0 — but "the BE doesn't have a per-zone price
+  // configured for this tenant" is operationally distinct from "we know
+  // the price is 20 000 so'm". Inventing a number meant the user saw a
+  // price the operator had never set, and could be surprised at the
+  // till. `pricePerHour: null` now indicates "no price configured" so
+  // the UI can render "Set at club" instead. Audit finding #9.
+  const zones: (Zone & {
+    title: string;
+    description: string;
+    unit: string;
+    pricePerHour: number | null;
+  })[] = useMemo(
     () => [
       {
         id: 'pc',
         title: t.zoneSelect.pcZone,
         description: t.zoneSelect.pcZoneDesc,
         available: grouped?.pc.available ?? 0,
-        pricePerHour: grouped?.pc.price || 20000,
+        pricePerHour: grouped && grouped.pc.price > 0 ? grouped.pc.price : null,
         imageUri: Images.zones.pc,
         isRoom: false,
         unit: t.zoneSelect.seatUnit,
@@ -117,7 +133,7 @@ export default function ZoneSelectScreen() {
         title: t.zoneSelect.vipZone,
         description: t.zoneSelect.vipZoneDesc,
         available: grouped?.vip.available ?? 0,
-        pricePerHour: grouped?.vip.price || 35000,
+        pricePerHour: grouped && grouped.vip.price > 0 ? grouped.vip.price : null,
         imageUri: Images.zones.vip,
         isRoom: false,
         unit: t.zoneSelect.seatUnit,
@@ -127,7 +143,7 @@ export default function ZoneSelectScreen() {
         title: t.zoneSelect.psZone,
         description: t.zoneSelect.psZoneDesc,
         available: grouped?.ps5.available ?? 0,
-        pricePerHour: grouped?.ps5.price || 25000,
+        pricePerHour: grouped && grouped.ps5.price > 0 ? grouped.ps5.price : null,
         imageUri: Images.zones.ps5,
         isRoom: true,
         unit: t.zoneSelect.roomUnit,
@@ -197,10 +213,16 @@ export default function ZoneSelectScreen() {
             const availLabel = t.zoneSelect.available
               .replace('{n}', String(zone.available))
               .replace('{unit}', zone.unit);
-            const priceLabel = t.zoneSelect.pricePerHour.replace(
-              '{price}',
-              `${formatPrice(zone.pricePerHour)} ${t.common.currencyUnit}`,
-            );
+            // When the BE has no per-zone price configured for this
+            // tenant we show "Set at club" instead of inventing a
+            // number. The user pays at the till in that case.
+            const priceLabel =
+              zone.pricePerHour == null
+                ? t.zoneSelect.priceAtClub
+                : t.zoneSelect.pricePerHour.replace(
+                    '{price}',
+                    `${formatPrice(zone.pricePerHour)} ${t.common.currencyUnit}`,
+                  );
             return (
               <FadeInView key={zone.id} delay={idx * 80}>
                 <ZoneCard

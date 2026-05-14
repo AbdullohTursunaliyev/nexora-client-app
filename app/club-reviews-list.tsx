@@ -214,16 +214,41 @@ export default function ClubReviewsListScreen() {
 
                 {r.comment && <Text style={styles.reviewComment}>{r.comment}</Text>}
 
-                {(r.atmosphere_rating || r.cleanliness_rating || r.staff_rating) && (
+                {/* Sub-rating pills — surface the four BE-supported
+                    columns (atmosphere / cleanliness / technical /
+                    peripherals). Pre-fix the third pill rendered
+                    `staff_rating` which the BE has never returned
+                    (the column doesn't exist on `club_reviews`), so
+                    every row's third pill was always hidden via the
+                    `!= null` guard. Audit H1 cleanup: replace the
+                    dead staff label with the real technical +
+                    peripherals fields. Use the dedicated
+                    writeReview.{atmosphere,cleanliness,technical,
+                    peripherals}Label keys for accurate copy. */}
+                {(r.atmosphere_rating ||
+                  r.cleanliness_rating ||
+                  r.technical_rating ||
+                  r.peripherals_rating) && (
                   <View style={styles.subRatings}>
                     {r.atmosphere_rating != null && (
-                      <Text style={styles.subRating}>{t.writeReview.rate4}: {r.atmosphere_rating}/5</Text>
+                      <Text style={styles.subRating}>
+                        {t.writeReview.atmosphereLabel}: {r.atmosphere_rating}/5
+                      </Text>
                     )}
                     {r.cleanliness_rating != null && (
-                      <Text style={styles.subRating}>{t.writeReview.rate5}: {r.cleanliness_rating}/5</Text>
+                      <Text style={styles.subRating}>
+                        {t.writeReview.cleanlinessLabel}: {r.cleanliness_rating}/5
+                      </Text>
                     )}
-                    {r.staff_rating != null && (
-                      <Text style={styles.subRating}>{t.writeReview.rate3}: {r.staff_rating}/5</Text>
+                    {r.technical_rating != null && (
+                      <Text style={styles.subRating}>
+                        {t.writeReview.technicalLabel}: {r.technical_rating}/5
+                      </Text>
+                    )}
+                    {r.peripherals_rating != null && (
+                      <Text style={styles.subRating}>
+                        {t.writeReview.peripheralsLabel}: {r.peripherals_rating}/5
+                      </Text>
                     )}
                   </View>
                 )}

@@ -98,6 +98,24 @@ interface BookBody {
   package_id?: number | null;
 }
 
+/**
+ * Shape returned by `POST /mobile/pcs/{id}/book`. Pre-fix the FE
+ * typed this as `{ok: boolean}` and discarded the BE-provided
+ * `id`/`reserved_from`/`reserved_until` payload — so payment.tsx
+ * couldn't surface the real PcBooking id and had to fabricate
+ * `NXR-{pcId}-{HHMM}` strings for the booking-success QR code. The
+ * BE response now includes `id`; the FE consumes it to display the
+ * canonical booking reference. Audit finding #4.
+ */
+export interface BookPcResponse {
+  ok: boolean;
+  /** Real PcBooking.id from the BE — use as the canonical booking ref. */
+  id?: number;
+  reserved_from?: string;
+  reserved_until?: string;
+  package_id?: number | null;
+}
+
 interface PartyBookBody {
   pc_ids: number[];
   start_at?: string;
@@ -247,8 +265,8 @@ export async function getPcGrid(): Promise<PcGridResponse> {
 }
 
 /** Bitta PC bron qilish */
-export async function bookPc(pcId: number, body?: BookBody): Promise<{ ok: boolean }> {
-  const res = await apiPost<ApiResource<{ ok: boolean }>>(`/mobile/pcs/${pcId}/book`, body || {});
+export async function bookPc(pcId: number, body?: BookBody): Promise<BookPcResponse> {
+  const res = await apiPost<ApiResource<BookPcResponse>>(`/mobile/pcs/${pcId}/book`, body || {});
   // A successful book flips the seat from free → reserved on the BE.
   // Drop the cache so the next zone-select / seat-select read shows
   // the new state.

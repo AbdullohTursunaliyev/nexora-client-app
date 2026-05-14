@@ -4,10 +4,8 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   TextInput,
   Pressable,
-  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -17,7 +15,8 @@ import SimpleHeader from '../components/common/SimpleHeader';
 import StarIcon from '../components/icons/StarIcon';
 import SparklesIcon from '../components/icons/SparklesIcon';
 import HeartIcon from '../components/icons/HeartIcon';
-import UsersIcon from '../components/icons/UsersIcon';
+import MonitorIcon from '../components/icons/MonitorIcon';
+import GamepadIcon from '../components/icons/GamepadIcon';
 import Button from '../components/common/Button';
 import * as clubsApi from '../lib/api/services/clubs';
 import { useToast } from '../components/common/Toast';
@@ -65,9 +64,17 @@ export default function WriteReviewScreen() {
   // joined clubs.
   const headerTitle = params.clubName?.trim() || t.writeReview.headerTitle;
   const [rating, setRating] = useState(0);
+  // Four sub-ratings matching the BE's SaveClubReviewAction contract:
+  // atmosphere / cleanliness / technical / peripherals. Pre-fix the
+  // form collected three (atmosphere/cleanliness/staff) — `staff` was
+  // silently dropped server-side (no such column), and the missing
+  // technical + peripherals fell back to the overall rating, so every
+  // submitted review had three sub-rating columns set to a copy of
+  // the overall number. Audit finding H1.
   const [atmosphere, setAtmosphere] = useState(0);
   const [cleanliness, setCleanliness] = useState(0);
-  const [staff, setStaff] = useState(0);
+  const [technical, setTechnical] = useState(0);
+  const [peripherals, setPeripherals] = useState(0);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -78,11 +85,20 @@ export default function WriteReviewScreen() {
     }
     setSubmitting(true);
     try {
+      // Send all four sub-ratings explicitly. The BE falls back each
+      // missing field to the overall `rating`, but we'd rather send
+      // the user's actual choices than rely on the BE's silent
+      // fallback (which masked the H1 bug for so long). When a
+      // sub-rating is left at 0 (user didn't tap it) we omit it so
+      // the BE falls back to overall — that preserves the "skip
+      // detail, leave only overall" UX while not lying about the
+      // user's choices when they DID tap a star.
       await clubsApi.saveClubReview({
         rating,
         atmosphere_rating: atmosphere || undefined,
         cleanliness_rating: cleanliness || undefined,
-        staff_rating: staff || undefined,
+        technical_rating: technical || undefined,
+        peripherals_rating: peripherals || undefined,
         comment: comment.trim() || undefined,
       });
       toast.success(t.writeReview.successToast);
@@ -112,12 +128,11 @@ export default function WriteReviewScreen() {
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>{t.writeReview.commentLabel}</Text>
         <View style={styles.detailedCard}>
           <RatingRow
             Icon={SparklesIcon}
             iconColor="#F59E0B"
-            label={t.writeReview.rate4}
+            label={t.writeReview.atmosphereLabel}
             value={atmosphere}
             onChange={setAtmosphere}
           />
@@ -125,17 +140,25 @@ export default function WriteReviewScreen() {
           <RatingRow
             Icon={HeartIcon}
             iconColor="#22C55E"
-            label={t.writeReview.rate5}
+            label={t.writeReview.cleanlinessLabel}
             value={cleanliness}
             onChange={setCleanliness}
           />
           <View style={styles.divider} />
           <RatingRow
-            Icon={UsersIcon}
+            Icon={MonitorIcon}
             iconColor="#00CFFF"
-            label={t.writeReview.rate3}
-            value={staff}
-            onChange={setStaff}
+            label={t.writeReview.technicalLabel}
+            value={technical}
+            onChange={setTechnical}
+          />
+          <View style={styles.divider} />
+          <RatingRow
+            Icon={GamepadIcon}
+            iconColor="#A78BFA"
+            label={t.writeReview.peripheralsLabel}
+            value={peripherals}
+            onChange={setPeripherals}
           />
         </View>
 

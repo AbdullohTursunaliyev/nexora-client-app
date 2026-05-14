@@ -359,6 +359,13 @@ type Dict = {
     available: string;
     full: string;
     pricePerHour: string;
+    /**
+     * Shown in place of the hourly price when the BE has no per-zone
+     * price configured for this tenant. Pre-fix the FE invented
+     * 20k/35k/25k fallbacks, which surprised users at the till when
+     * the operator's real rate differed. Audit finding #9.
+     */
+    priceAtClub: string;
     recommended: string;
     realtimeTitle: string;
     realtimeSub: string;
@@ -566,6 +573,23 @@ type Dict = {
     submitBtn: string;
     successToast: string;
     errorMissing: string;
+    /**
+     * Sub-rating row labels.
+     *
+     * The BE (SaveClubReviewAction) requires four sub-ratings:
+     * atmosphere, cleanliness, technical, peripherals. Pre-fix the
+     * FE collected three rows labelled atmosphere/cleanliness/staff
+     * and sent `staff_rating` which the BE silently dropped, while
+     * the missing `technical_rating` + `peripherals_rating` fell
+     * back to the overall rating — so every submitted review had
+     * three sub-rating columns set to the overall number and the
+     * staff value the user picked never reached the database.
+     * Audit finding H1.
+     */
+    atmosphereLabel: string;
+    cleanlinessLabel: string;
+    technicalLabel: string;
+    peripheralsLabel: string;
   };
   myReviews: {
     /** Screen header — "Mening sharhlarim" / "Мои отзывы". */
@@ -1701,7 +1725,7 @@ export const translations: Record<Locale, Dict> = {
       headerStep: '06',
       headerTitle: 'BRON TASDIQLANDI',
       title: 'Bron muvaffaqiyatli!',
-      subtitle: 'Uchrashguncha!',
+      subtitle: "O'rningiz band qilindi — klubga kelganingizda QR kodni ko'rsating.",
       bookingId: 'Bron ID',
       detailClub: 'Klub',
       detailTimeFallback: "Bugun, vaqt belgilanmagan",
@@ -1811,6 +1835,7 @@ export const translations: Record<Locale, Dict> = {
       available: '{n} {unit} mavjud',
       full: "Bo'sh joy yo'q",
       pricePerHour: 'soatiga {price}',
+      priceAtClub: 'Narx klubda belgilanadi',
       recommended: 'Tavsiya',
       realtimeTitle: 'Real vaqtda yangilanadi',
       realtimeSub: 'Mavjudlik hozircha real vaqt holatida.',
@@ -1933,6 +1958,10 @@ export const translations: Record<Locale, Dict> = {
       submitBtn: 'Yuborish',
       successToast: 'Sharhingiz qabul qilindi',
       errorMissing: "Reyting va sharh to'liq bo'lishi kerak",
+      atmosphereLabel: 'Atmosfera',
+      cleanlinessLabel: 'Tozalik',
+      technicalLabel: 'Texnik holat',
+      peripheralsLabel: 'Aksessuarlar',
     },
     myReviews: {
       headerTitle: 'Mening sharhlarim',
@@ -2935,7 +2964,7 @@ export const translations: Record<Locale, Dict> = {
       headerStep: '06',
       headerTitle: 'БРОНЬ ПОДТВЕРЖДЕНА',
       title: 'Бронирование успешно!',
-      subtitle: 'До встречи!',
+      subtitle: 'Место зарезервировано — покажите QR при входе в клуб.',
       bookingId: 'ID брони',
       detailClub: 'Клуб',
       detailTimeFallback: 'Сегодня, время не указано',
@@ -3045,6 +3074,7 @@ export const translations: Record<Locale, Dict> = {
       available: 'Доступно: {n} {unit}',
       full: 'Свободных мест нет',
       pricePerHour: '{price} в час',
+      priceAtClub: 'Цена уточняется в клубе',
       recommended: 'Рекомендуем',
       realtimeTitle: 'Обновляется в реальном времени',
       realtimeSub: 'Доступность отображается в реальном времени.',
@@ -3167,6 +3197,10 @@ export const translations: Record<Locale, Dict> = {
       submitBtn: 'Отправить',
       successToast: 'Отзыв принят',
       errorMissing: 'Заполните рейтинг и текст отзыва',
+      atmosphereLabel: 'Атмосфера',
+      cleanlinessLabel: 'Чистота',
+      technicalLabel: 'Техническое состояние',
+      peripheralsLabel: 'Аксессуары',
     },
     myReviews: {
       headerTitle: 'Мои отзывы',
@@ -4169,7 +4203,7 @@ export const translations: Record<Locale, Dict> = {
       headerStep: '06',
       headerTitle: 'BOOKING CONFIRMED',
       title: 'Booking successful!',
-      subtitle: 'See you soon!',
+      subtitle: 'Your seat is reserved — show the QR at the club when you arrive.',
       bookingId: 'Booking ID',
       detailClub: 'Club',
       detailTimeFallback: 'Today, time not set',
@@ -4279,6 +4313,7 @@ export const translations: Record<Locale, Dict> = {
       available: '{n} {unit} available',
       full: 'No seats available',
       pricePerHour: '{price} / hour',
+      priceAtClub: 'Price set at the club',
       recommended: 'Recommended',
       realtimeTitle: 'Updated in real time',
       realtimeSub: 'Availability is shown in real time.',
@@ -4401,6 +4436,10 @@ export const translations: Record<Locale, Dict> = {
       submitBtn: 'Submit',
       successToast: 'Review submitted',
       errorMissing: 'Rating and review text are required',
+      atmosphereLabel: 'Atmosphere',
+      cleanlinessLabel: 'Cleanliness',
+      technicalLabel: 'Tech condition',
+      peripheralsLabel: 'Peripherals',
     },
     myReviews: {
       headerTitle: 'My reviews',

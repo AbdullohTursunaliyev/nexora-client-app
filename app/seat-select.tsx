@@ -65,7 +65,7 @@ export default function SeatSelectScreen() {
   const t = useT();
   const toast = useToast();
   const insets = useSafeAreaInsets();
-  const { zoneId } = useSelectedZone();
+  const { zoneId, setBeZoneId } = useSelectedZone();
   const { seatId, select } = useSelectedSeat(zoneId ?? 'pc');
 
   // Real BE grid replaces the hardcoded 3×10 ROWS constant. Each
@@ -99,6 +99,16 @@ export default function SeatSelectScreen() {
   // Pick the zone whose layout we're rendering. Falls back to first
   // available zone when the FE key doesn't match — see resolveZone.
   const activeZone = useMemo(() => resolveZone(zoneId, zones), [zoneId, zones]);
+
+  // Once the heuristic resolves the FE-category bucket to a specific
+  // BE zone row, write its numeric id back to the shared useSelectedZone
+  // singleton. Downstream screens (time-select, payment) can then
+  // filter slots / scope pricing windows by the real zone id instead
+  // of re-running the same free-text heuristic on every screen.
+  // Audit finding #10.
+  useEffect(() => {
+    setBeZoneId(activeZone?.zone.id ?? null);
+  }, [activeZone, setBeZoneId]);
 
   const zoneTitle = useMemo(() => {
     if (activeZone) return activeZone.zone.name;

@@ -43,14 +43,36 @@ const FALLBACK_DURATION_HOURS = 1;
 
 /**
  * Combine a wall-clock time picked on `/time-select` ("14:00") with
- * today's date and return an ISO string the BE accepts as `start_at`.
- * If the parsed time is in the past (user picked a slot earlier than
- * "now" — happens for the "10:00" chip after lunch) we roll forward
- * to tomorrow so the booking is never created with a past timestamp.
+ * a YYYY-MM-DD date (provided by the BE slots endpoint) and return
+ * an ISO string the BE accepts as `start_at`.
+ *
+ * Pre-fix this only took `startTime` and assumed "today" — if the
+ * user lingered past midnight, or the BE's slots endpoint had
+ * rolled forward to tomorrow but the FE didn't know, the local
+ * "today rollover" disagreed with the BE's actual slot date and
+ * the booking landed on the wrong calendar day. Audit finding #6.
+ *
+ * Passing `startDate` from `/time-select` keeps both sides aligned:
+ * the same date the user saw on the slot chip is the date that
+ * goes into start_at.
  */
-function buildStartAt(startTime: string): string {
+function buildStartAt(startTime: string, startDate?: string): string {
   const [hh, mm] = startTime.split(':').map((p) => Number(p));
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return new Date().toISOString();
+
+  // Prefer the BE-provided date when present + valid. Parse as
+  // `YYYY-MM-DDTHH:MM:00` and let `new Date()` apply the local TZ —
+  // matches the BE's "local-time slot" semantics. If the date is
+  // missing or malformed, fall back to the legacy "today + rollover"
+  // behaviour so older deep-links don't crash.
+  if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const target = new Date(`${startDate}T${pad(hh)}:${pad(mm)}:00`);
+    if (!Number.isNaN(target.getTime())) return target.toISOString();
+  }
+
+  // Legacy fallback path — used only when startDate is missing
+  // (older builds, deep-link entry without time-select context).
   const target = new Date();
   target.setHours(hh, mm, 0, 0);
   if (target.getTime() < Date.now()) {
@@ -127,6 +149,13 @@ export default function PaymentScreen() {
     priceAmount?: string;
     durationHours?: string;
     startTime?: string;
+    /**
+     * YYYY-MM-DD from `/time-select`'s `BookingSlotsResponse.date`.
+     * When present, buildStartAt uses it directly; when missing
+     * (older deep-link, no slot endpoint), buildStartAt falls back
+     * to the legacy "today + auto-rollover" path. Audit finding #6.
+     */
+    startDate?: string;
   }>();
   const packagePrice = params.priceAmount ? Number(params.priceAmount) : null;
   const packageDuration = params.durationHours ? Number(params.durationHours) : null;
@@ -179,17 +208,22 @@ export default function PaymentScreen() {
 
   // Same start-time computation as `buildStartAt` below, but exposed
   // here so we can show a warning when the user's picked slot rolls
-  // forward to tomorrow. Pre-fix the rollover was silent — user
-  // picked "10:00" at 14:00 expecting today, got booked tomorrow
-  // 10:00 without realising.
+  // forward to tomorrow. The rollover only happens when the BE didn't
+  // provide an explicit `startDate` (legacy path); when we have a
+  // valid BE date the rollover indicator is suppressed (because we
+  // know the BE already accounted for tomorrow-vs-today).
   const rolledToTomorrow = useMemo(() => {
     if (!params.startTime) return false;
+    if (params.startDate && /^\d{4}-\d{2}-\d{2}$/.test(params.startDate)) {
+      // BE-supplied date — no client-side guessing.
+      return false;
+    }
     const [hh, mm] = String(params.startTime).split(':').map((p) => Number(p));
     if (!Number.isFinite(hh) || !Number.isFinite(mm)) return false;
     const target = new Date();
     target.setHours(hh, mm, 0, 0);
     return target.getTime() < Date.now();
-  }, [params.startTime]);
+  }, [params.startTime, params.startDate]);
 
   const onConfirm = async () => {
     if (!method) return;
@@ -275,22 +309,33 @@ export default function PaymentScreen() {
       // wallet every minute) to package mode (free for the package
       // window). Without it the user would be double-charged: once
       // here, once via session billing.
-      const startAtIso = params.startTime ? buildStartAt(params.startTime) : undefined;
+      const startAtIso = params.startTime
+        ? buildStartAt(params.startTime, params.startDate)
+        : undefined;
       const holdMinutes = Math.max(1, Math.round(durationHours * 60));
       const packageIdNum = params.packageId ? Number(params.packageId) : null;
-      await pcsApi.bookPc(pcId, {
+      const bookRes = await pcsApi.bookPc(pcId, {
         start_at: startAtIso,
         hold_minutes: holdMinutes,
         package_id: Number.isFinite(packageIdNum) ? packageIdNum : null,
       });
 
-      // Forward real values to the confirmation screen so it shows the
-      // actual seat, time, package, and total — replacing the
-      // hardcoded "NXR-27836 / A08 / 12 may, 12:00-13:00" mock. We
-      // prefer the user-facing cell label (seatId — what they tapped)
-      // over the BE's pc.code field. They picked "VIP-1" on the
-      // seat-select grid; showing "PC-1" on the confirmation would
-      // make them wonder if they got the right seat.
+      // Real PcBooking id from the BE — replaces the previously
+      // fabricated `NXR-{pcId}-{HHMM}` string. Staff scanning the QR
+      // on booking-success now matches against the canonical
+      // PcBooking.id, so the booking can be reconciled in the
+      // operator dashboard. Audit finding #4. The `NXR-` prefix is
+      // preserved as a user-facing namespace so the visible id reads
+      // as a Nexora reference, not a bare integer.
+      const realId = bookRes.id;
+      const bookingRef =
+        realId != null
+          ? `NXR-${String(realId).padStart(6, '0')}`
+          : // Defensive fallback for an older BE build that doesn't
+            // emit `id` — keep the previous pseudo-id format so the
+            // screen still has something to render.
+            `NXR-${target.id}-${(startAtIso ?? '').slice(11, 16).replace(':', '')}`;
+
       router.replace({
         pathname: '/booking-success',
         params: {
@@ -301,9 +346,7 @@ export default function PaymentScreen() {
           startTime: params.startTime ?? '',
           durationHours: String(durationHours),
           totalAmount: String(total),
-          // Use the BE-side PC id + ISO start as a stable booking
-          // identifier until the BE returns a real reservation id.
-          bookingId: `NXR-${target.id}-${(startAtIso ?? '').slice(11, 16).replace(':', '')}`,
+          bookingId: bookingRef,
         },
       });
     } catch (e) {

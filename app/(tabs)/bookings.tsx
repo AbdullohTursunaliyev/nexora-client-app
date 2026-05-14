@@ -14,7 +14,7 @@ import { router } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { Fonts } from '../../constants/Fonts';
 import { Images } from '../../constants/Images';
-import { useT } from '../../lib/i18n/LocaleProvider';
+import { useLocale, useT } from '../../lib/i18n/LocaleProvider';
 import { useToast } from '../../components/common/Toast';
 import { useDialog } from '../../components/common/AppDialog';
 import { getErrorMessage } from '../../lib/api/client';
@@ -45,14 +45,28 @@ interface Booking {
 
 // Helpers to bridge backend Booking shape (ISO timestamps) -> the UI's
 // pre-existing card shape (date/month/time strings).
-function shapeApiBooking(b: bookingsApi.Booking): Booking {
+//
+// `localeTag` lets the month abbreviation follow the active app locale.
+// Pre-fix this was hardcoded to `'en-US'` — every uz/ru user saw English
+// "Jan / Feb / …" on every booking card, even though the rest of the
+// app was localised. Audit finding M2.
+function shapeApiBooking(b: bookingsApi.Booking, localeTag: string): Booking {
   const start = new Date(b.start_at);
   const end = new Date(b.end_at);
   const pad = (n: number) => String(n).padStart(2, '0');
+  // Some Android RN runtimes don't ship the full Intl data for every
+  // locale tag — fall back to the device default if toLocaleString
+  // throws. Better to surface ANY abbreviation than crash the card.
+  let monthLabel: string;
+  try {
+    monthLabel = start.toLocaleString(localeTag, { month: 'short' });
+  } catch {
+    monthLabel = start.toLocaleString(undefined, { month: 'short' });
+  }
   return {
     id: String(b.id),
     date: pad(start.getDate()),
-    month: start.toLocaleString('en-US', { month: 'short' }),
+    month: monthLabel,
     club: b.tenant_name || '—',
     time: `${pad(start.getHours())}:${pad(start.getMinutes())} - ${pad(end.getHours())}:${pad(end.getMinutes())}`,
     zone: b.zone_name || b.pc_code || '',
@@ -62,10 +76,22 @@ function shapeApiBooking(b: bookingsApi.Booking): Booking {
   };
 }
 
+// Map the FE locale enum to a real BCP-47 tag for Intl.DateTimeFormat.
+// `'uz'` alone works on most modern devices but ru/en need the
+// region-tagged form on older Android runtimes (pre-API 28) for the
+// short-month label to localise correctly.
+const LOCALE_TO_INTL_TAG: Record<string, string> = {
+  uz: 'uz-UZ',
+  ru: 'ru-RU',
+  en: 'en-US',
+};
+
 export default function BookingsScreen() {
   const t = useT();
   const toast = useToast();
   const dialog = useDialog();
+  const { locale } = useLocale();
+  const localeTag = LOCALE_TO_INTL_TAG[locale] ?? 'en-US';
   const [tab, setTab] = useState(0);
   const [upcoming, setUpcoming] = useState<Booking[]>([]);
   const [past, setPast] = useState<Booking[]>([]);
@@ -124,7 +150,7 @@ export default function BookingsScreen() {
         toast.error(getErrorMessage(e));
         try {
           const upcomingRes = await bookingsApi.listUpcoming();
-          setUpcoming(upcomingRes.map(shapeApiBooking));
+          setUpcoming(upcomingRes.map((b) => shapeApiBooking(b, localeTag)));
         } catch {
           // If the reload also fails the user can pull-to-refresh.
         }
@@ -132,7 +158,7 @@ export default function BookingsScreen() {
         setCancellingId(null);
       }
     },
-    [dialog, t, toast, cancellingId],
+    [dialog, t, toast, cancellingId, localeTag],
   );
 
   const list = tab === 0 ? upcoming : past;
@@ -156,10 +182,10 @@ export default function BookingsScreen() {
         bookingsApi.listHistory(),
       ]);
       if (upcomingRes.status === 'fulfilled') {
-        setUpcoming(upcomingRes.value.map(shapeApiBooking));
+        setUpcoming(upcomingRes.value.map((b) => shapeApiBooking(b, localeTag)));
       }
       if (pastRes.status === 'fulfilled') {
-        setPast(pastRes.value.map(shapeApiBooking));
+        setPast(pastRes.value.map((b) => shapeApiBooking(b, localeTag)));
       }
       // Surface a single toast if EITHER call failed. We avoid two
       // separate toasts when both fail (the underlying issue is the
@@ -176,7 +202,7 @@ export default function BookingsScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [toast]);
+  }, [toast, localeTag]);
 
   useEffect(() => {
     loadBookings();
