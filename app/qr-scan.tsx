@@ -38,6 +38,25 @@ import { useAuth } from '../store/AuthProvider';
 const QrCameraEmbed = lazy(() => import('../components/qr/QrCameraEmbed'));
 
 /**
+ * Detect whether the manual-input buffer looks like a JSON sticker
+ * payload so we can flip the input layout from the stylised
+ * Orbitron-letterspaced "code slot" to a compact left-aligned mono
+ * block that actually FITS a 44-char operator JSON.
+ *
+ * Heuristic: contains a `{`, OR contains a quoted key (`"id"` /
+ * `"code"` / etc.) — the second case catches half-typed JSON where
+ * the user retyped from the visually-truncated input slot and
+ * dropped the opening brace. Conservative enough that plain
+ * sticker codes like `42:ABC123` still get the stylised slot.
+ */
+function isJsonShape(s: string): boolean {
+  if (!s) return false;
+  if (s.includes('{')) return true;
+  if (/"(?:id|pc_?id|code|qr_?code|type)"\s*:/i.test(s)) return true;
+  return false;
+}
+
+/**
  * QR-scan screen — camera-first redesign (v3).
  *
  * History:
@@ -178,10 +197,57 @@ export default function QrScanScreen() {
     }
 
     // #1: Plain colon/dash/slash/underscore-separated.
-    const m = text.match(/^(?:PC[-_]?)?(\d+)[:\-_/](.+)$/i);
-    if (m && m[1] && m[2]) {
-      return { pcId: Number(m[1]), code: m[2] };
+    const plainMatch = text.match(/^(?:PC[-_]?)?(\d+)[:\-_/](.+)$/i);
+    if (plainMatch && plainMatch[1] && plainMatch[2]) {
+      return { pcId: Number(plainMatch[1]), code: plainMatch[2] };
     }
+
+    // #4: ABSOLUTE LAST RESORT — scattered key/value extraction.
+    //
+    // The manual-entry TextInput uses a fixed-width slot at fontSize 17
+    // + letterSpacing 2.5 + textAlign:center, so a 44-char operator
+    // JSON ({"TYPE":"PC","ID":"PC-01","CODE":"PC:PC-01"}) renders
+    // VISIBLY truncated — the user sees only the middle ~20 chars
+    // ('C-01","CODE":"PC:PC-01"}-style) and assumes that's what they
+    // typed. If they paste then submit, parseQr receives the full
+    // 44 chars (TextInput.value is the underlying string, not the
+    // visible substring) — but if they manually retype based on the
+    // truncated view, the actual buffer has no leading `{` and the
+    // JSON branch above (which needs an opening brace anywhere in
+    // the text) bails.
+    //
+    // This branch is the safety net for both shapes:
+    //   - Half-typed JSON missing its envelope: 'C-01","CODE":"PC..."'
+    //   - Comma-separated key/value strings:    'id=PC-01,code=PC:PC-01'
+    //   - Querystring fragments:                'pc_id=42&code=abc123'
+    //
+    // It scans for ANY `(pc_id|id):value` and ANY `(code|secret):value`
+    // pair regardless of envelope, quoting, or surrounding garbage.
+    // Then pulls the first digit run out of the id value (operator
+    // labels like "PC-01" still produce an integer pc_id=1) and uses
+    // the matched code value verbatim. If both come back populated,
+    // we submit — the BE is the authority on whether the resulting
+    // pair actually unlocks a PC.
+    const idAny = text.match(
+      /(?:pc_?id|^id\b|[^a-z0-9_]id)\s*["']?\s*[:=]\s*["']?([^"',}\s]+)/i,
+    );
+    const codeAny = text.match(
+      /(?:qr_?code|code|secret)\s*["']?\s*[:=]\s*["']?([^"',}]+)/i,
+    );
+    if (codeAny) {
+      // Prefer the labelled id if present; otherwise fall back to the
+      // first standalone digit anywhere in the text. Operator stickers
+      // typically embed the integer PC index in the label even when
+      // the envelope is unconventional.
+      const idStr = idAny?.[1] ?? text;
+      const digitMatch = String(idStr).match(/(\d+)/);
+      const pc = digitMatch ? Number(digitMatch[1]) : NaN;
+      const c = String(codeAny[1] ?? '')
+        .replace(/[",]\s*$/, '')
+        .trim();
+      if (Number.isFinite(pc) && pc > 0 && c) return { pcId: pc, code: c };
+    }
+
     return null;
   };
 
@@ -544,33 +610,52 @@ export default function QrScanScreen() {
               </TouchableOpacity>
             </View>
             <Text style={styles.sheetSub}>{t.qrScan.manualHint}</Text>
+            {/* Input style depends on payload shape — a stylised
+                Orbitron + tracking + centred layout reads as a "code
+                slot" for the simple "42:ABC123" case, but it cripples
+                the JSON case (44 chars of letter-spaced monospace
+                overflow the slot, the centre-aligned text scrolls
+                out from BOTH sides, and the user sees a fragmented
+                middle that doesn't look like what they pasted).
+                Detect JSON-shape and flip to a left-aligned compact
+                layout so the FULL string is legible. */}
             <View style={styles.codeInputWrap}>
               <TextInput
-                style={styles.codeInput}
+                style={[
+                  styles.codeInput,
+                  isJsonShape(code) && styles.codeInputJson,
+                ]}
                 placeholder={t.qrScan.manualPlaceholder}
                 placeholderTextColor="#3A4250"
                 value={code}
                 // Only upper-case the simple "42:abc123" sticker codes
-                // for visual consistency. If the payload starts with
-                // `{` it's a JSON sticker — uppercasing would corrupt
-                // field names ("id" → "ID" works, but "code" → "CODE"
-                // could mismatch a producer that ships lowercase keys)
-                // AND mangle the JSON syntax itself for strict
-                // parsers. Leave JSON-shaped input untouched.
-                onChangeText={(c) => setCode(c.startsWith('{') ? c : c.toUpperCase())}
+                // for visual consistency. If the payload looks JSON-
+                // shaped, uppercasing would corrupt field names
+                // ("code" → "CODE" could mismatch a producer that
+                // ships lowercase keys) AND mangle the JSON syntax
+                // itself for strict parsers. The case-insensitive
+                // findKey in parseQr already handles either casing,
+                // so we err on the side of preserving the user's
+                // exact paste.
+                onChangeText={(c) => setCode(isJsonShape(c) ? c : c.toUpperCase())}
                 // autoCapitalize=none for JSON; characters for plain.
-                // Cheap heuristic but it spares the user fighting the
-                // keyboard when they paste a JSON sticker payload.
-                autoCapitalize={code.startsWith('{') ? 'none' : 'characters'}
+                // The check runs against the new `c` via the user's
+                // keystroke, so the keyboard reacts the same tick as
+                // the input flips into JSON mode.
+                autoCapitalize={isJsonShape(code) ? 'none' : 'characters'}
                 autoCorrect={false}
                 // autoFocus removed in favour of explicit tap-to-focus —
                 // autoFocus inside a sliding Modal races the slide
                 // animation on Android and the keyboard sometimes
                 // never appears. The user can tap to focus once the
                 // sheet settles, which is more reliable.
-                // Length bumped from 40 → 160 so operator-generated
-                // JSON stickers ({"TYPE":"PC","ID":"PC-01",...}) fit.
-                maxLength={160}
+                // Length bumped from 40 → 240 so operator-generated
+                // JSON stickers with multiple fields fit.
+                maxLength={240}
+                // Multi-line for JSON so the entire payload is visible
+                // at once. Single-line height for plain codes so the
+                // slot still reads as a "code box".
+                multiline={isJsonShape(code)}
                 onSubmitEditing={onManualSubmit}
                 returnKeyType="go"
               />
@@ -847,12 +932,16 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 14,
   },
+  // minHeight (not fixed `height`) so the wrapper grows with a
+  // multi-line JSON payload. The single-line "42:ABC123" case still
+  // sits at the same 56pt visual baseline because the inner TextInput
+  // is content-sized — only JSON shape pushes the wrapper taller.
   codeInputWrap: {
     width: '100%',
     backgroundColor: '#141823',
     borderRadius: 14,
     paddingHorizontal: 18,
-    height: 56,
+    minHeight: 56,
     borderWidth: 1.5,
     borderColor: 'rgba(0, 207, 255, 0.25)',
     justifyContent: 'center',
@@ -865,6 +954,21 @@ const styles = StyleSheet.create({
     letterSpacing: 2.5,
     textAlign: 'center',
     paddingVertical: 0,
+  },
+  // JSON sticker mode — flips the input from "stylised code slot"
+  // to "scrollable raw text" so a 44-char {"TYPE":"PC","ID":"PC-01",
+  // "CODE":"PC:PC-01"} is fully legible. Inter regular at 13pt with
+  // no tracking and left-align mirrors a code editor's gutter row.
+  codeInputJson: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 13,
+    letterSpacing: 0,
+    textAlign: 'left',
+    // Multi-line accommodates wrap when the payload is long enough
+    // that even left-aligned compact text overflows one row.
+    minHeight: 56,
+    maxHeight: 120,
+    paddingVertical: 12,
   },
   sheetSubmitWrap: {
     width: '100%',

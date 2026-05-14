@@ -9,7 +9,6 @@ import {
   RefreshControl,
   Platform,
   LayoutAnimation,
-  UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -26,12 +25,11 @@ import { useFavoriteClubs, clearFavorites } from '../lib/state/useFavoriteClubs'
 import { useDialog } from '../components/common/AppDialog';
 import { useToast } from '../components/common/Toast';
 
-// LayoutAnimation needs an explicit opt-in on Android (no-op on iOS
-// where it's enabled by default). Without this the row-remove
-// animation snap-cuts instead of smoothly collapsing.
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// LayoutAnimation opt-in removed — `UIManager.setLayoutAnimation
+// EnabledExperimental` is a no-op in the New Architecture (RN 0.74+)
+// and emits a yellow-box warning on every mount. Android in the
+// Bridgeless engine enables LayoutAnimation automatically, so the
+// opt-in was both useless AND noisy.
 
 /**
  * /favorites — the user's hand-curated "saved clubs" list.
