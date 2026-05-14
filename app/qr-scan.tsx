@@ -210,6 +210,16 @@ export default function QrScanScreen() {
   const submitParsed = useCallback(
     async (parsed: { code: string }) => {
       setSubmitting(true);
+      // DEV-only diag: surface the resolved code + current tenant so
+      // bench testing can verify the FE is sending the right value to
+      // the BE. Stripped from release builds by the __DEV__ gate.
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log('[qr-scan] openByQr submit', {
+          code: parsed.code,
+          tenantId: currentTenantId,
+        });
+      }
       try {
         const res = await pcsApi.openByQr({ code: parsed.code });
         if (res.ok) {
@@ -221,12 +231,16 @@ export default function QrScanScreen() {
           toast.error(getErrorMessage(new Error('QR code not recognized')));
         }
       } catch (e) {
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.log('[qr-scan] openByQr error', getErrorMessage(e));
+        }
         toast.error(getErrorMessage(e));
       } finally {
         setSubmitting(false);
       }
     },
-    [toast],
+    [toast, currentTenantId],
   );
 
   /**
@@ -237,7 +251,15 @@ export default function QrScanScreen() {
    */
   const handleScanned = useCallback(
     (raw: string) => {
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log('[qr-scan] raw payload', raw);
+      }
       const parsed = parseQr(raw);
+      if (__DEV__) {
+        // eslint-disable-next-line no-console
+        console.log('[qr-scan] parsed', parsed);
+      }
       if (!parsed) {
         // Manual sheet was retired — failure path now just surfaces
         // the toast and lets the camera retry. The user moves the
