@@ -265,11 +265,15 @@ const styles = StyleSheet.create({
     // total card height consistent across rows in the same carousel.
     minHeight: 17,
   },
-  // Lighter / italic-looking tint when the subtitle is the fallback
-  // copy ("details coming soon") rather than real catalog data.
-  // Hints at the missing-data state without screaming.
+  // Italic + same brightness as the populated subtitle so the
+  // fallback ("Подробности скоро") is comfortably READABLE on the
+  // dark card slab. Pre-fix this used `#6B7280` which sank below the
+  // contrast floor — Cyberium-style new clubs with no signals (no
+  // distance, no PC count, no PS zone) looked like the subtitle row
+  // wasn't rendered at all. The italic alone is enough to read as
+  // "placeholder hint" without dimming the colour into invisibility.
   subtitleFallback: {
-    color: '#6B7280',
+    color: '#8B95A8',
     fontStyle: 'italic',
   },
   // Highlight row is always rendered with a fixed height so cards

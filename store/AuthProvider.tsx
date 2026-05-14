@@ -281,8 +281,83 @@ export default function AuthProvider({ children }: ProviderProps) {
     return unsubscribe;
   }, [isLoading, resetAuth]);
 
+  /**
+   * Cross-user state wipe — fired from `login` / `register` when the
+   * BE returns a user_id that differs from the one currently in memory
+   * OR in AsyncStorage.
+   *
+   * Why this exists on top of `resetAuth`:
+   *   `resetAuth` fires on the logout button, on 401 auth:unauthorized,
+   *   and on boot when `me()` rejects — every "intentional or detected"
+   *   user exit. But there's a residual path that bypasses all three:
+   *     1. User A is logged in, taps "Logout"
+   *     2. resetAuth fires `auth:logout` → favorites/zone singletons
+   *        wipe their in-memory state IF their listener is registered
+   *     3. But if `useFavoriteClubs` was never imported in the session
+   *        (user A never tapped a club card or visited /favorites),
+   *        the module hasn't loaded → no listener → in-memory Map
+   *        stays empty (lucky) but AsyncStorage is wiped by resetAuth's
+   *        multiRemove (still safe).
+   *     4. User B logs in → useFavoriteClubs first mount → hydrate()
+   *        reads the (now-empty) AsyncStorage → fine.
+   *
+   *   The leak shape the report described ("abl sees previous user's
+   *   clubs in wishlist") requires a path where AsyncStorage was NOT
+   *   wiped. The only known shape: user A force-quit the app mid-
+   *   session (auth:logout never fired) AND user B opened the app
+   *   while user A's mobile_token was already invalidated server-side
+   *   (so `me()` on boot would 401)... but boot's `resetAuth` should
+   *   catch that path too via the catch block.
+   *
+   *   That leaves: belt-and-suspenders for the unknown unknown. We do
+   *   a multiRemove of the user-scoped keys when login() detects a
+   *   user_id flip, so even if resetAuth was skipped somehow the new
+   *   user starts on a clean slate. Authentication isn't a free
+   *   operation anyway — one extra storage write per login is cheap.
+   */
+  const wipeIfCrossUser = useCallback(async (incomingUserId: number) => {
+    let previousUserId: number | null = user?.id ?? null;
+    if (previousUserId == null) {
+      // user state is null but storage might still hold the previous
+      // identity if a force-quit interrupted the resetAuth multiRemove.
+      // Read the row directly so the comparison is honest.
+      try {
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.USER);
+        if (stored) {
+          const parsed = JSON.parse(stored) as { id?: unknown };
+          if (typeof parsed?.id === 'number') previousUserId = parsed.id;
+        }
+      } catch {
+        // Storage unavailable / row corrupt — skip comparison and treat
+        // this as a fresh login (no wipe). Worst case the new user
+        // starts with stale state, same as today.
+      }
+    }
+    if (previousUserId == null || previousUserId === incomingUserId) return;
+
+    // Different identity → fire the bus AND multiRemove the same keys
+    // resetAuth touches. Singletons that attached their listener pick
+    // up the bus event; ones that didn't yet (race) pick up the empty
+    // AsyncStorage on their next hydrate() call.
+    authEvents.emit('auth:logout');
+    await AsyncStorage.multiRemove([
+      STORAGE_KEYS.FAVORITE_CLUBS,
+      STORAGE_KEYS.WALLET_SELECTED_CLUB,
+      STORAGE_KEYS.SELECTED_ZONE,
+      STORAGE_KEYS.DISCOVER_FILTER,
+      STORAGE_KEYS.DISCOVER_ADVANCED,
+      STORAGE_KEYS.NOTIFICATION_PREFS,
+      STORAGE_KEYS.PROFILE_SOON_COLLAPSED,
+      // CURRENT_TENANT also gets wiped — the previous user's selected
+      // tenant id is meaningless for the new identity (memberships
+      // are scoped by mobile_user_id) and could 401 the first request.
+      STORAGE_KEYS.CURRENT_TENANT,
+    ]);
+  }, [user]);
+
   const login = useCallback(async (body: LoginBody) => {
     const res = await authApi.login(body);
+    await wipeIfCrossUser(res.user.id);
     await persistUser(res.user);
     setClubs(res.clubs);
     setMobileTokenState(tokens.getMobileToken());
@@ -290,15 +365,16 @@ export default function AuthProvider({ children }: ProviderProps) {
     // / tournaments etc. without the request interceptor 401-then-
     // logging-them-out. See ensureTenantSession docblock.
     await ensureTenantSession(res.clubs, currentTenantId);
-  }, [ensureTenantSession, currentTenantId]);
+  }, [ensureTenantSession, currentTenantId, wipeIfCrossUser]);
 
   const register = useCallback(async (body: RegisterBody) => {
     const res = await authApi.register(body);
+    await wipeIfCrossUser(res.user.id);
     await persistUser(res.user);
     setClubs(res.clubs);
     setMobileTokenState(tokens.getMobileToken());
     await ensureTenantSession(res.clubs, null);
-  }, [ensureTenantSession]);
+  }, [ensureTenantSession, wipeIfCrossUser]);
 
   const logout = useCallback(async () => {
     await authApi.logout();
