@@ -24,12 +24,34 @@ export const Images = {
   promotion: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80',
   mapPlaceholder: 'https://images.unsplash.com/photo-1524661135-423995f22d0b?w=800&q=80',
 
+  /**
+   * Onboarding hero photography. Pre-redesign these were 400–900px
+   * thumbnails meant to sit inside decorative card/orb overlays —
+   * the editorial redesign promotes them to full-bleed Full HD hero
+   * images, so they're requested at w=1600 with auto-format/quality.
+   *
+   * Picked for production-app feel:
+   *   - heroArena: esports-tournament wide shot with neon lighting →
+   *     used as the brand-intro slide. Cinematic and high-energy.
+   *   - heroClub: dimly lit gaming-club interior with rows of
+   *     monitors → used for the "find clubs near you" slide.
+   *   - heroSetup: close-up of a personal gaming desk (RGB
+   *     keyboard, headset, monitor) → used for the "book your
+   *     seat" / features slide. Reads as "personal seat" not
+   *     "tournament floor".
+   *
+   * Decorative shape overlays (glow circles, building cards, pin
+   * floats, brand-label badges, NexoraLogo SVG, per-feature stock
+   * thumbnails) were removed alongside this asset upgrade — the
+   * photo IS the hero now, not a thumbnail behind chrome.
+   */
   onboarding: {
-    cyberCity: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=900&q=80',
-    building: 'https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=800&q=80',
-    computer: 'https://images.unsplash.com/photo-1593640408182-31c70c8268f5?w=400&q=80',
-    controller: 'https://images.unsplash.com/photo-1592840496694-26d035b52b48?w=400&q=80',
-    wallet: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=400&q=80',
+    heroArena:
+      'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=1600&q=85&auto=format',
+    heroClub:
+      'https://images.unsplash.com/photo-1591488320449-011701bb6704?w=1600&q=85&auto=format',
+    heroSetup:
+      'https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=1600&q=85&auto=format',
   },
 
   zones: {

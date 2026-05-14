@@ -33,6 +33,29 @@ export interface FriendUser {
   online?: boolean;
 }
 
+/**
+ * Relation of a SEARCHED user to the current viewer. Drives the
+ * action chip on each search-row: only `none` should show "Add",
+ * `outgoing` shows "Sent (cancel?)", `incoming` shows "Accept",
+ * `accepted` shows "Friends" (no action).
+ *
+ * Pre-fix (audit P1) the FE adapter dropped this field, so every
+ * search row rendered the same "Add" button regardless of state.
+ * Tapping "Add" on an already-friend or already-pending row 422'd
+ * with a "Friendship already exists" toast — the user couldn't
+ * tell from the UI that the row was already actioned.
+ */
+export type FriendRelationStatus =
+  | 'none'
+  | 'outgoing'
+  | 'incoming'
+  | 'accepted'
+  | 'blocked';
+
+export interface FriendSearchResult extends FriendUser {
+  relation_status: FriendRelationStatus;
+}
+
 export interface FriendRequest {
   id: number;
   from_user: FriendUser;
@@ -150,12 +173,24 @@ function adaptInvite(item: RawInviteItem): FriendInvite {
 // ---- Public API --------------------------------------------------------
 
 /**
- * Single GET — the BE returns both friends + pending in one payload, so
- * we don't fan out two identical requests.
+ * Single GET — the BE returns friends + incoming + outgoing in one
+ * payload. Exposing all three lets the FE render:
+ *   - `friends`        → "My friends" section (accepted)
+ *   - `pending`        → incoming requests waiting on MY response
+ *   - `outgoing`       → requests *I* sent that the other user
+ *                        hasn't answered yet — pre-fix the FE
+ *                        silently discarded this, so a user with 5
+ *                        pending outgoing requests saw nothing and
+ *                        had no way to cancel them.
+ *
+ * `pending` is kept as a separate key for backwards compatibility
+ * (existing call sites read `.pending`); new code should read
+ * `incoming` + `outgoing` directly via the destructured shape.
  */
 export async function listFriendsAndRequests(): Promise<{
   friends: FriendUser[];
   pending: FriendRequest[];
+  outgoing: FriendRequest[];
 }> {
   const res = await apiGet<ApiResource<RawFriendsIndexResponse>>('/mobile/friends');
   const raw = res.data ?? ({} as RawFriendsIndexResponse);
@@ -167,6 +202,11 @@ export async function listFriendsAndRequests(): Promise<{
     // sent ME a friend request and is waiting on my response.
     pending: Array.isArray(raw.incoming)
       ? raw.incoming.map(adaptFriendshipToRequest)
+      : [],
+    // `outgoing` is what *I* sent. The user-shaped object inside is
+    // the RECIPIENT (so the FE can render "Waiting on @recipient").
+    outgoing: Array.isArray(raw.outgoing)
+      ? raw.outgoing.map(adaptFriendshipToRequest)
       : [],
   };
 }
@@ -183,25 +223,77 @@ export async function listPendingRequests(): Promise<FriendRequest[]> {
   return pending;
 }
 
-/** Do'st qidirish login bo'yicha. */
-export async function searchFriends(query: string): Promise<FriendUser[]> {
+/**
+ * Do'st qidirish login bo'yicha.
+ *
+ * Returns `FriendSearchResult` (extends `FriendUser`) with the
+ * `relation_status` field the BE attaches. The caller uses this to
+ * pick the right action button per row:
+ *   - 'none'      → "Add" (POST sendRequest)
+ *   - 'outgoing'  → "Sent" (DELETE cancels)
+ *   - 'incoming'  → "Accept" (BE auto-accepts on second sendRequest
+ *                   from the reverse side)
+ *   - 'accepted'  → "Friends" (no action)
+ *   - 'blocked'   → row hidden / "Blocked" badge
+ *
+ * Pre-fix the BE field was dropped during the adapter step, so the
+ * UI rendered "Add" for every row regardless of state — tapping it
+ * for an already-friend or already-pending row 422'd silently.
+ */
+export async function searchFriends(query: string): Promise<FriendSearchResult[]> {
   const res = await apiGet<ApiResource<RawSearchResponse>>('/mobile/friends/search', {
     params: { q: query },
   });
   const raw = res.data ?? ({} as RawSearchResponse);
-  return Array.isArray(raw.items) ? raw.items.map((r) => adaptFriendUser(r)) : [];
+  return Array.isArray(raw.items)
+    ? raw.items.map((r) => ({
+        ...adaptFriendUser(r),
+        relation_status: normalizeRelationStatus(r.relation_status),
+      }))
+    : [];
+}
+
+/**
+ * Map the BE's `relation_status` enum into the FE union type. The
+ * BE returns strings like "none" / "outgoing" / "incoming" /
+ * "accepted" / "blocked" — anything else (legacy data, future
+ * status we don't know about yet) collapses to `'none'` so the
+ * caller renders a safe "Add" affordance instead of crashing on an
+ * exhaustive switch.
+ */
+function normalizeRelationStatus(raw: string | undefined): FriendRelationStatus {
+  switch (raw) {
+    case 'outgoing':
+    case 'incoming':
+    case 'accepted':
+    case 'blocked':
+      return raw;
+    default:
+      return 'none';
+  }
 }
 
 /**
  * Do'stlik so'rovi yuborish. BE expects `friend_mobile_user_id` as
- * the field name — pre-fix the FE sent `target_user_id` so every
- * call 422'd silently.
+ * the field name.
+ *
+ * The BE auto-promotes pending → accepted when the recipient already
+ * has an OUTGOING request to the caller (i.e. caller is accepting a
+ * reverse-pending). In that case the response `status` is
+ * `'accepted'` instead of `'pending'`. Callers can use the returned
+ * `status` for an accurate optimistic UI flip — e.g. the search row
+ * should jump straight to "Friend" not "Sent" when the BE
+ * auto-accepted.
  */
-export async function sendFriendRequest(targetUserId: number): Promise<{ ok: boolean }> {
-  const res = await apiPost<ApiResource<{ ok: boolean }>>('/mobile/friends/requests', {
-    friend_mobile_user_id: targetUserId,
-  });
-  return res.data;
+export async function sendFriendRequest(
+  targetUserId: number,
+): Promise<{ ok: boolean; status: 'pending' | 'accepted' }> {
+  const res = await apiPost<ApiResource<{ ok: boolean; status?: string }>>(
+    '/mobile/friends/requests',
+    { friend_mobile_user_id: targetUserId },
+  );
+  const status = res.data?.status === 'accepted' ? 'accepted' : 'pending';
+  return { ok: !!res.data?.ok, status };
 }
 
 /** So'rovga javob (accept/reject). */
@@ -218,10 +310,31 @@ export async function respondFriendRequest(
 
 /**
  * Do'stni o'chirish. BE route is `DELETE /mobile/friends/{friendMobileUserId}`.
+ *
+ * The BE deletes the friendship row regardless of its status —
+ * accepted, pending-outgoing, or pending-incoming all flow through
+ * the same path. That means this endpoint also doubles as:
+ *   - cancel an outgoing pending request I sent
+ *   - reject an incoming pending request without going through
+ *     `respondFriendRequest('reject')`
+ * Callers should use the semantic alias (`cancelOutgoing`) when
+ * that's the user-visible action, so the call site reads clearly.
  */
 export async function removeFriend(friendUserId: number): Promise<{ ok: boolean }> {
   const res = await apiDelete<ApiResource<{ ok: boolean }>>(`/mobile/friends/${friendUserId}`);
   return res.data;
+}
+
+/**
+ * Semantic alias for cancelling a pending outgoing friend request.
+ * Wraps the same DELETE as `removeFriend` since the BE doesn't
+ * distinguish — but separating the call sites keeps the FE intent
+ * (cancel vs. unfriend) readable in the consumer.
+ */
+export async function cancelOutgoingRequest(
+  recipientUserId: number,
+): Promise<{ ok: boolean }> {
+  return removeFriend(recipientUserId);
 }
 
 // ---- Club session invites (client.auth required) ----------------------

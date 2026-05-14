@@ -16,12 +16,14 @@ import { Fonts } from '../../constants/Fonts';
 import { Images } from '../../constants/Images';
 import { useT } from '../../lib/i18n/LocaleProvider';
 import { useToast } from '../../components/common/Toast';
+import { useDialog } from '../../components/common/AppDialog';
 import { getErrorMessage } from '../../lib/api/client';
 import RefreshIcon from '../../components/icons/RefreshIcon';
 import ClockIcon from '../../components/icons/ClockIcon';
 import CheckIcon from '../../components/icons/CheckIcon';
 import Button from '../../components/common/Button';
 import * as bookingsApi from '../../lib/api/services/bookings';
+import * as pcsApi from '../../lib/api/services/pcs';
 
 interface Booking {
   id: string;
@@ -63,10 +65,75 @@ function shapeApiBooking(b: bookingsApi.Booking): Booking {
 export default function BookingsScreen() {
   const t = useT();
   const toast = useToast();
+  const dialog = useDialog();
   const [tab, setTab] = useState(0);
   const [upcoming, setUpcoming] = useState<Booking[]>([]);
   const [past, setPast] = useState<Booking[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  // Track the booking id currently being cancelled — disables the
+  // row's Cancel button + dims it so the user can't double-tap during
+  // the round-trip. Tracking by id (not a single boolean) lets us
+  // disable only the row being cancelled if a user somehow taps two
+  // different bookings in quick succession.
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  /**
+   * Cancel a confirmed booking. Pre-fix this CTA didn't exist — users
+   * could create a reservation but had no way to drop it from the app
+   * (only by walking into the club). The BE has had the route ready
+   * (`DELETE /mobile/bookings/{id}` enforces the 1h-buffer policy +
+   * frees up the PC) and `bookingsApi.cancelBooking` was implemented;
+   * the FE just never surfaced it. Audit finding #1.
+   *
+   * Lifecycle:
+   *   1. Confirm dialog explains the 1h-buffer + irreversibility.
+   *   2. Optimistic local removal so the row disappears instantly.
+   *   3. BE call. On failure we re-fetch the full list so the row
+   *      reappears (BE rejected — booking still active).
+   *   4. PC cache cleared on success so the next zone-/seat-select
+   *      read shows the freed PC immediately.
+   */
+  const cancelBooking = useCallback(
+    async (b: Booking) => {
+      if (cancellingId) return; // dedupe taps during the round-trip
+      const ok = await dialog.confirm({
+        title: t.bookings.cancelConfirmTitle,
+        message: t.bookings.cancelConfirmMessage,
+        confirmLabel: t.bookings.cancelConfirmBtn,
+        cancelLabel: t.bookings.cancelKeepBtn,
+        destructive: true,
+      });
+      if (!ok) return;
+      setCancellingId(b.id);
+      // Optimistic local removal — pre-fix the row stayed visible
+      // for the duration of the network round-trip, which felt
+      // unresponsive on slow networks.
+      setUpcoming((prev) => prev.filter((row) => row.id !== b.id));
+      try {
+        await bookingsApi.cancelBooking(Number(b.id));
+        // PC catalogue cache must drop so the freed PC shows as
+        // 'free' on subsequent zone-/seat-select reads (the user's
+        // most likely next action after cancelling — make a new
+        // booking).
+        pcsApi.invalidatePcsCache();
+        toast.success(t.bookings.cancelSuccess);
+      } catch (e) {
+        // BE refused — most commonly the 1h-buffer rejection. Roll
+        // back the optimistic removal by reloading the upcoming list
+        // (cheaper than re-inserting at the right sort position).
+        toast.error(getErrorMessage(e));
+        try {
+          const upcomingRes = await bookingsApi.listUpcoming();
+          setUpcoming(upcomingRes.map(shapeApiBooking));
+        } catch {
+          // If the reload also fails the user can pull-to-refresh.
+        }
+      } finally {
+        setCancellingId(null);
+      }
+    },
+    [dialog, t, toast, cancellingId],
+  );
 
   const list = tab === 0 ? upcoming : past;
 
@@ -251,6 +318,32 @@ export default function BookingsScreen() {
                     </Text>
                   </View>
                 </View>
+                {/* Cancel CTA only on confirmed (upcoming) bookings.
+                    Tapping the link triggers a destructive-confirm
+                    dialog → BE DELETE → local optimistic removal +
+                    PC cache invalidation. Pre-fix this CTA was
+                    missing entirely so users had no way to drop a
+                    booking from the app. Audit finding #1. */}
+                {b.status === 'confirmed' && (
+                  <Pressable
+                    style={styles.cancelLink}
+                    onPress={() => cancelBooking(b)}
+                    disabled={cancellingId === b.id}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={t.bookings.cancelBtn}
+                    accessibilityState={{ disabled: cancellingId === b.id }}
+                  >
+                    <Text
+                      style={[
+                        styles.cancelLinkText,
+                        cancellingId === b.id && styles.cancelLinkTextDim,
+                      ]}
+                    >
+                      {t.bookings.cancelBtn}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
               <Image source={{ uri: b.image }} style={styles.bookingImage} />
             </TouchableOpacity>
@@ -428,6 +521,22 @@ const styles = StyleSheet.create({
   statusText: {
     fontFamily: Fonts.inter.semiBold,
     fontSize: 10.5,
+  },
+  // Cancel CTA — left-aligned link below the status pill. Tinted red
+  // so the user knows it's destructive without a heavy button frame
+  // (a full red button would dominate the booking card visually).
+  cancelLink: {
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    marginTop: 2,
+  },
+  cancelLinkText: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 11.5,
+    color: '#EF4444',
+  },
+  cancelLinkTextDim: {
+    color: 'rgba(239, 68, 68, 0.45)',
   },
   bookingImage: {
     width: 50,

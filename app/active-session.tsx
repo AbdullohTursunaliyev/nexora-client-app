@@ -43,12 +43,18 @@ export default function ActiveSessionScreen() {
   const dialog = useDialog();
   const { clubs, currentTenantId } = useAuth();
   const activeMembership = clubs.find((c) => c.tenant_id === currentTenantId) ?? null;
+  const myClientId = activeMembership?.client_id ?? null;
   // Pre-fix this was seeded to `72 * 60 + 45` (4365s) — every user
   // entering active-session saw "01:12:45" as elapsed time even when
   // they'd just booked a second ago. We now compute from the BE PC's
-  // `started_at` and fall back to 0 while the fetch is in flight.
+  // booking.reserved_from (proxy for session start when the catalog
+  // doesn't expose Session.started_at) and only tick once we've
+  // confirmed the PC is actually 'busy'.
   const [seconds, setSeconds] = useState(0);
   const [activePc, setActivePc] = useState<Pc | null>(null);
+  // Tracks whether the first poll has completed so the empty state
+  // doesn't flash on mount.
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [ending, setEnding] = useState(false);
 
   // 1Hz timer + 30s PC poll — both pause when the app is backgrounded
@@ -63,18 +69,25 @@ export default function ActiveSessionScreen() {
     return () => sub.remove();
   }, []);
 
+  // Only tick the elapsed timer when the PC is actually 'busy'. For
+  // 'booked' status (reservation placed, session not started yet) the
+  // counter freezes — ticking 00:00:01 ... when no session exists is
+  // misleading copy.
+  const isLive = activePc?.status === 'busy';
+
   useEffect(() => {
+    if (!isLive) return;
     const id = setInterval(() => {
       if (isForeground.current) setSeconds((s) => s + 1);
     }, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [isLive]);
 
   // Pull the user's currently-busy PC from the backend. Polls every 30s so the
   // session card stays fresh (e.g. if staff updates status remotely).
-  // When we find the busy PC we also seed `seconds` from its
-  // `started_at` so the elapsed timer reflects reality, not a hardcoded
-  // 72-minute fixture.
+  // When we find the user's PC we also seed `seconds` from its
+  // `booking.reserved_from` so the elapsed timer reflects reality, not
+  // a hardcoded 72-minute fixture.
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -82,25 +95,38 @@ export default function ActiveSessionScreen() {
       try {
         const list = await pcsApi.listPcs();
         if (cancelled) return;
-        const mine = list.find((p) => p.status === 'busy' || p.status === 'reserved');
+        // Pre-fix this was `list.find((p) => p.status === 'busy' || p.status === 'reserved')`
+        // which had two bugs: (1) 'reserved' is never returned by the
+        // BE — it's 'booked'; (2) status-only matching surfaced a
+        // STRANGER's busy PC the moment any other user in the tenant
+        // started a session. The new helper filters by booking.is_mine
+        // so a multi-user club shows the caller their own seat.
+        const mine = pcsApi.findMyPc(list, myClientId);
         if (mine) {
           setActivePc(mine);
-          // Seed elapsed seconds from the PC's started_at (when it
-          // exists). The 1Hz ticker continues to increment from
-          // there. If we re-poll after 30s we DON'T re-seed unless
-          // we've found a different PC — otherwise the ticker would
-          // freeze on every poll.
-          const startedAtRaw = (mine as Pc & { started_at?: string | null }).started_at;
-          if (startedAtRaw) {
+          // Seed elapsed seconds from the booking's reserved_from
+          // (BE doesn't expose Session.started_at on the catalog —
+          // reserved_from is the closest proxy we have). Only seed
+          // once: re-seeding on every poll would freeze the visible
+          // timer on each 30s tick.
+          const startedAtRaw = mine.booking?.reserved_from ?? null;
+          if (startedAtRaw && mine.status === 'busy') {
             const startedMs = Date.parse(startedAtRaw);
             if (Number.isFinite(startedMs)) {
               const elapsedSec = Math.max(0, Math.floor((Date.now() - startedMs) / 1000));
               setSeconds((curr) => (curr === 0 ? elapsedSec : curr));
             }
           }
+        } else {
+          // Explicit reset — pre-fix the screen retained the last
+          // PC state forever once seen. Now a clean poll with no
+          // match drops the stale row so the empty state renders.
+          setActivePc(null);
         }
       } catch {
         // Silent — UI keeps the last-known PC visible if offline.
+      } finally {
+        if (!cancelled) setHasLoadedOnce(true);
       }
     };
     load();
@@ -109,7 +135,7 @@ export default function ActiveSessionScreen() {
       cancelled = true;
       clearInterval(id);
     };
-  }, []);
+  }, [myClientId]);
 
   const onEndSession = async () => {
     if (!activePc) {
@@ -137,7 +163,10 @@ export default function ActiveSessionScreen() {
   const hh = Math.floor(seconds / 3600);
   const mm = Math.floor((seconds % 3600) / 60);
   const ss = seconds % 60;
-  const elapsed = `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+  // For 'booked' status the session hasn't started yet — render '—'
+  // for elapsed instead of "00:00:00" ticking, so the user understands
+  // they're still in the pre-session window.
+  const elapsed = isLive ? `${pad(hh)}:${pad(mm)}:${pad(ss)}` : '—';
   // Show '—' while we haven't located the user's busy PC instead of
   // pretending it's "PC-07" for every user.
   const pcLabel = activePc?.code ?? '—';
@@ -148,16 +177,31 @@ export default function ActiveSessionScreen() {
   const clubName = activeMembership?.tenant_name ?? '';
   const clubLogo = activeMembership?.club_logo ?? '';
 
-  // Start time is derived from the BE-supplied started_at on the PC
-  // (mirrors how `seconds` is seeded). Falls back to a dash when the
-  // PC doesn't carry a started_at yet — better than hardcoding 14:35.
+  // Start time is derived from the booking's reserved_from (closest
+  // proxy: the BE catalog doesn't expose Session.started_at). Falls
+  // back to a dash when no booking is known yet.
   const startTimeLabel = (() => {
-    const startedAtRaw = (activePc as (Pc & { started_at?: string | null }) | null)?.started_at;
+    const startedAtRaw = activePc?.booking?.reserved_from ?? null;
     if (!startedAtRaw) return '—';
     const d = new Date(startedAtRaw);
     if (Number.isNaN(d.getTime())) return '—';
     return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   })();
+
+  // "Awaiting confirmation" empty state — shown when the first poll
+  // completed but didn't find any PC owned by this user. Common
+  // scenarios:
+  //   - User scanned a QR but their PcBooking just expired (reserved
+  //     window ran out before they got to the seat)
+  //   - QR scan was accepted by the BE but the operator hasn't
+  //     transitioned the booking → session yet, AND the booking row
+  //     was cleaned up by a cron in between
+  //   - User landed here without a booking at all (deep link / nav
+  //     edge case)
+  // Pre-fix the screen silently picked a stranger's busy PC and
+  // showed a misleading elapsed timer. The empty state is the honest
+  // signal that something needs human resolution.
+  const showAwaiting = hasLoadedOnce && !activePc;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -187,6 +231,31 @@ export default function ActiveSessionScreen() {
             </View>
           </View>
         </View>
+
+        {/* Awaiting-confirmation banner — shown when a poll has
+            completed but no PC was matched to this user. Sits at the
+            top of the body so it's the first thing the user reads,
+            not buried below the stats. The "—" PC label still renders
+            below so the layout doesn't reshape; the banner is the
+            primary signal. */}
+        {showAwaiting && (
+          <View style={styles.awaitingCard}>
+            <Text style={styles.awaitingTitle}>{t.activeSession.awaitingTitle}</Text>
+            <Text style={styles.awaitingSub}>{t.activeSession.awaitingSub}</Text>
+          </View>
+        )}
+
+        {/* "Booked but not live yet" banner — shown when we DID find
+            the user's PC but it's still in pre-session state. Distinct
+            from the awaiting banner above (which means "no PC found
+            at all"); this one means "your reservation is real, but
+            the session hasn't been started by staff yet". */}
+        {activePc && !isLive && (
+          <View style={styles.pendingCard}>
+            <Text style={styles.pendingTitle}>{t.activeSession.pendingTitle}</Text>
+            <Text style={styles.pendingSub}>{t.activeSession.pendingSub}</Text>
+          </View>
+        )}
 
         <Text style={styles.sectionLabel}>{t.activeSession.pcLabel}</Text>
         <View style={styles.pcRow}>
@@ -374,6 +443,51 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.inter.semiBold,
     fontSize: 12,
     color: Colors.text,
+  },
+  // Awaiting-confirmation banner — amber-tinted to read as a soft
+  // attention prompt (not destructive red). Sits above the PC label
+  // so it's the first thing the user reads when no PC matched.
+  awaitingCard: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 14,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.25)',
+  },
+  awaitingTitle: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    color: '#F59E0B',
+  },
+  awaitingSub: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 12.5,
+    color: '#C7CAD1',
+    lineHeight: 18,
+  },
+  // "Booked but not live yet" banner — cyan, matches the brand
+  // primary so it reads as informational, not warning.
+  pendingCard: {
+    backgroundColor: 'rgba(0, 207, 255, 0.08)',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 14,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.22)',
+  },
+  pendingTitle: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    color: '#00CFFF',
+  },
+  pendingSub: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 12.5,
+    color: '#C7CAD1',
+    lineHeight: 18,
   },
   sectionLabel: {
     fontFamily: Fonts.inter.regular,

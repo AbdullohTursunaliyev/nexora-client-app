@@ -23,10 +23,17 @@ beforeEach(() => {
 });
 
 describe('clubs service', () => {
-  test('joinByCode posts code', async () => {
+  test('joinByCode posts code and password', async () => {
+    // BE requires both `code` and `password` (min 8 chars). Pre-fix
+    // this test only verified the code field, masking the bug where
+    // the service forgot to send the password — every real join
+    // call 422'd in production while this test passed locally.
     mockedPost.mockResolvedValueOnce({ data: { ok: true, tenant_id: 1 } });
-    await clubs.joinByCode('ABC123');
-    expect(mockedPost).toHaveBeenCalledWith('/mobile/club/join', { code: 'ABC123' });
+    await clubs.joinByCode('ABC123', 'secret-password');
+    expect(mockedPost).toHaveBeenCalledWith('/mobile/club/join', {
+      code: 'ABC123',
+      password: 'secret-password',
+    });
   });
 
   test('previewClub uses tenant id in path', async () => {

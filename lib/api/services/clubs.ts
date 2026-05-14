@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from '../client';
+import { apiGet, apiPost, apiDelete } from '../client';
 import type { ApiResource, ClubPreview } from '../types';
 
 interface JoinClubBody {
@@ -55,6 +55,34 @@ export interface ClubReviewsResponse {
   next_review_at: string | null;
 }
 
+/**
+ * Cross-tenant "my reviews" row — every review the user authored,
+ * bundled with the tenant info needed to render the club label /
+ * cover on each card. Distinct from `ClubReview` because the
+ * single-tenant shape doesn't carry tenant info (it doesn't need
+ * to — the caller already knows which tenant).
+ */
+export interface MyReview {
+  id: number;
+  tenant: {
+    id: number;
+    name: string;
+    cover_url: string | null;
+  };
+  rating: number;
+  atmosphere_rating: number | null;
+  cleanliness_rating: number | null;
+  technical_rating: number | null;
+  peripherals_rating: number | null;
+  comment: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface MyReviewsResponse {
+  reviews: MyReview[];
+}
+
 interface SaveReviewBody {
   rating: number;
   atmosphere_rating?: number;
@@ -66,9 +94,29 @@ interface SaveReviewBody {
   comment?: string;
 }
 
-/** Klub kodi bilan qo'shilish */
-export async function joinByCode(code: string): Promise<JoinClubResponse> {
-  const res = await apiPost<ApiResource<JoinClubResponse>>('/mobile/club/join', { code });
+/**
+ * Klub kodi bilan qo'shilish.
+ *
+ * The BE requires BOTH a `code` and a `password` — pre-fix this
+ * service only sent `{code}` so every join attempt 422'd with
+ * "The password field is required". Per-club passwords are by
+ * design: each Client row (one per tenant per user) carries its
+ * own credential so a user can have different passwords across
+ * clubs. Min 8 chars enforced server-side; we surface that to the
+ * UI via the form-level validator (see club-join.tsx).
+ *
+ * Empty / shorter passwords are NOT silently accepted — the BE
+ * is the source of truth; the FE pre-check on length saves a
+ * round-trip but the server is authoritative.
+ */
+export async function joinByCode(
+  code: string,
+  password: string,
+): Promise<JoinClubResponse> {
+  const res = await apiPost<ApiResource<JoinClubResponse>>('/mobile/club/join', {
+    code,
+    password,
+  });
   return res.data;
 }
 
@@ -78,10 +126,48 @@ export async function previewClub(tenantId: number): Promise<ClubPreview> {
   return res.data;
 }
 
+/**
+ * Klubdan chiqish (DELETE /mobile/club/leave/{tenantId}).
+ *
+ * The BE refuses (422) if there's an active session on the user's
+ * PC for this tenant — the operator has to close it first so
+ * billing isn't orphaned. Other side effects:
+ *   - Existing balance is FORFEITED (no refund on leave)
+ *   - Bookings cascade-delete
+ *   - Session history / reviews stay (audit trail)
+ *
+ * Returns `{ok}` on success; caller is expected to refresh the
+ * AuthProvider's clubs list afterwards so the leaving club drops
+ * out of the local membership state.
+ */
+export async function leaveClub(tenantId: number): Promise<{ ok: boolean }> {
+  const res = await apiDelete<ApiResource<{ ok: boolean }>>(
+    `/mobile/club/leave/${tenantId}`,
+  );
+  return res.data;
+}
+
 /** Joriy klub profili (client.auth) */
 export async function getClubProfile(): Promise<ClubProfile> {
   const res = await apiGet<ApiResource<ClubProfile>>('/mobile/club/profile');
   return res.data;
+}
+
+/**
+ * Cross-tenant "my reviews" — every review the caller has authored
+ * across every club they're a Client of. Sorted newest-first by
+ * the BE. Used by the profile-menu "Sharhlar" surface.
+ *
+ * Pre-fix the profile menu "Reviews" entry pointed at
+ * `/club-reviews-list` with NO clubId, which silently fell through
+ * to the current-tenant review feed — strangers' reviews of the
+ * user's active club. That confused users who expected to see
+ * THEIR OWN writeups. This endpoint fills that gap with a
+ * dedicated cross-tenant list.
+ */
+export async function getMyReviews(): Promise<MyReview[]> {
+  const res = await apiGet<ApiResource<MyReviewsResponse>>('/mobile/auth/reviews');
+  return Array.isArray(res.data?.reviews) ? res.data.reviews : [];
 }
 
 /**

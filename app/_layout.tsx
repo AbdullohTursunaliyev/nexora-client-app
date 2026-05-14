@@ -96,6 +96,18 @@ export default function RootLayout() {
               <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="help-support" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
+              {/* Settings → "Transaction history" routes here. Pre-fix
+                  the row pointed at /(tabs)/bookings (reservation list)
+                  even though the copy promised transaction history —
+                  see settings.tsx docblock. */}
+              <Stack.Screen name="transaction-history" options={{ animation: 'slide_from_right' }} />
+              {/* Settings → "Notification settings" routes here. Pre-fix
+                  the row pointed at /notifications (the inbox), which
+                  is reachable from the bell on Home anyway — so the
+                  Settings row duplicated existing access AND its
+                  "settings" label was misleading. The new screen
+                  surfaces real per-category toggles. */}
+              <Stack.Screen name="notification-settings" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="ai-assistant" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="smart-recommendations" options={{ animation: 'slide_from_right' }} />
               {/* rewards-center / rewards-store screens were removed
@@ -116,6 +128,7 @@ export default function RootLayout() {
               <Stack.Screen name="friend-requests" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="write-review" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="club-reviews-list" options={{ animation: 'slide_from_right' }} />
+              <Stack.Screen name="my-reviews" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="smart-seat" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="smart-queue" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="party-booking" options={{ animation: 'slide_from_right' }} />

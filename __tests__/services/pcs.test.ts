@@ -174,4 +174,54 @@ describe('pcs service', () => {
     await pcs.cancelSmartQueue(9);
     expect(mockedDelete).toHaveBeenCalledWith('/mobile/client/smart-queue/9');
   });
+
+  describe('findMyPc', () => {
+    // Helper for terse fixtures — only the fields findMyPc reads.
+    const pc = (overrides: any) => ({ id: 1, code: 'PC-1', status: 'free', ...overrides });
+
+    test('returns PC where booking.is_mine === true', () => {
+      const list = [
+        pc({ id: 1, status: 'booked', booking: { client_id: 10, is_mine: false } }),
+        pc({ id: 2, status: 'busy', booking: { client_id: 99, is_mine: true } }),
+        pc({ id: 3, status: 'free' }),
+      ];
+      const out = pcs.findMyPc(list as any, 99);
+      expect(out?.id).toBe(2);
+    });
+
+    test('falls back to client_id match when is_mine flag is absent', () => {
+      // Older BE build that returns the booking object without is_mine.
+      const list = [
+        pc({ id: 1, status: 'booked', booking: { client_id: 10 } }),
+        pc({ id: 2, status: 'busy', booking: { client_id: 99 } }),
+      ];
+      const out = pcs.findMyPc(list as any, 99);
+      expect(out?.id).toBe(2);
+    });
+
+    test('returns null when no PC is owned by the caller', () => {
+      // Pre-fix this was the buggy path — old code returned the first
+      // busy PC in the tenant regardless of ownership. Now we return
+      // null so callers can render an empty/awaiting state instead.
+      const list = [
+        pc({ id: 1, status: 'busy', booking: { client_id: 10, is_mine: false } }),
+        pc({ id: 2, status: 'free' }),
+      ];
+      const out = pcs.findMyPc(list as any, 99);
+      expect(out).toBeNull();
+    });
+
+    test('returns null when caller has no clientId AND no is_mine flag matches', () => {
+      const list = [
+        pc({ id: 1, status: 'busy', booking: { client_id: 10 } }),
+        pc({ id: 2, status: 'booked', booking: { client_id: 11 } }),
+      ];
+      const out = pcs.findMyPc(list as any, null);
+      expect(out).toBeNull();
+    });
+
+    test('returns null on an empty PC list', () => {
+      expect(pcs.findMyPc([], 99)).toBeNull();
+    });
+  });
 });

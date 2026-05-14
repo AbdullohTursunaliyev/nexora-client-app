@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -92,8 +92,28 @@ export default function PaymentScreen() {
   // `clubs[0]` of a hardcoded fixture would credit a different club's
   // wallet than the one being booked.
   const { clubs, currentTenantId } = useAuth();
-  const activeMembership = clubs.find((c) => c.tenant_id === currentTenantId) ?? clubs[0];
+  // Strict match — pre-fix this fell back to `clubs[0]` when
+  // `currentTenantId` was null (post-logout / token expiry mid-flow),
+  // so the user could silently book a seat on the WRONG tenant's PC
+  // catalogue. Now we keep the membership null when no tenant is
+  // active and the effect below bounces them to /clubs-switch. The
+  // null-check below the destructure (`if (!currentTenantId)`)
+  // doesn't get a chance to redirect synchronously, so the JSX
+  // additionally tolerates `activeMembership = null` and the
+  // Confirm button is disabled in that state.
+  const activeMembership =
+    clubs.find((c) => c.tenant_id === currentTenantId) ?? null;
   const hasClubBalance = !!activeMembership && (activeMembership.balance ?? 0) > 0;
+
+  // Tenant gate — if the user reached /payment with no active tenant
+  // (deep link, stale stack, race between switchClub failure and
+  // navigation), redirect to clubs-switch instead of booking against
+  // a phantom tenant. Audit finding #7.
+  useEffect(() => {
+    if (currentTenantId == null) {
+      router.replace('/clubs-switch');
+    }
+  }, [currentTenantId]);
   const { zoneId } = useSelectedZone();
   const { seatId, pcId } = useSelectedSeat(zoneId ?? 'pc');
 
@@ -122,6 +142,15 @@ export default function PaymentScreen() {
   const [promoApplied, setPromoApplied] = useState(false);
   const [method, setMethod] = useState<PaymentMethod | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // Synchronous double-submit guard. `setConfirming(true)` is an async
+  // React state mutation — on slow networks a rapid double-tap fires
+  // `onConfirm` twice before React renders the disabled button. The
+  // BE serialises the actual booking via `lockForUpdate`, but the
+  // loser hits 422 and shows a confusing error *after* the user
+  // already saw "success" navigation. The ref flag short-circuits the
+  // second tap synchronously, before the network round-trip starts.
+  // Audit finding #2.
+  const submittingRef = useRef(false);
 
   // Prefer the package price + duration forwarded from /time-select
   // (the source of truth for what the user chose). Fall back to the
@@ -164,6 +193,12 @@ export default function PaymentScreen() {
 
   const onConfirm = async () => {
     if (!method) return;
+    // Synchronous guard against double-tap — fires BEFORE the React
+    // state update so a 50ms-spaced double-tap can't both reach the
+    // BE. Pre-fix the `confirming` state guarded the button visually
+    // but didn't catch taps fired between the touch event and the
+    // state render.
+    if (submittingRef.current) return;
     if (!seatId) {
       toast.error(t.payment.errorSeatMissing);
       return;
@@ -177,7 +212,16 @@ export default function PaymentScreen() {
       toast.error(t.payment.errorInsufficientBalance);
       return;
     }
+    if (!currentTenantId) {
+      // Tenant gate fallback — should be caught by the useEffect
+      // above, but defence-in-depth in case the redirect hasn't
+      // completed when the user taps.
+      toast.error(t.payment.errorSeatUnavailable);
+      router.replace('/clubs-switch');
+      return;
+    }
 
+    submittingRef.current = true;
     setConfirming(true);
     try {
       // pcId comes straight from the grid endpoint via useSelectedSeat
@@ -200,9 +244,12 @@ export default function PaymentScreen() {
 
       // Re-check live status before locking — the PC may have been
       // booked by someone else during the seat-selection → payment
-      // window. We still hit /mobile/pcs (cached for 30s) so we
-      // don't depend on stale grid data either.
-      const pcs = await pcsApi.listPcs();
+      // window. Pre-fix this read from the cached `listPcs` (30s
+      // TTL), so a PC booked 25s ago by another user still showed
+      // `'free'` here and the BE would 422 the actual book call.
+      // Forcing a fresh fetch closes that race window. Audit
+      // finding #13.
+      const pcs = await pcsApi.listPcs({ force: true });
       const target = pcs.find((p) => p.id === pcId);
       if (!target) {
         // PC disappeared between selection and confirm (extremely
@@ -260,8 +307,27 @@ export default function PaymentScreen() {
         },
       });
     } catch (e) {
-      toast.error(getErrorMessage(e));
+      // Specialised handling for the concurrent-loser case — when two
+      // users race to book the same PC, the BE's `lockForUpdate`
+      // serialises them and the loser receives:
+      //   422 "PC is already booked by another client or busy now"
+      // Pre-fix this surfaced as a generic toast and left the user
+      // stuck on /payment with a dead selection — re-tapping Confirm
+      // just 422'd again. Now we detect the message, push back to
+      // /seat-select with a clear toast so the user picks a
+      // different seat. Audit finding #3.
+      const msg = String(getErrorMessage(e) ?? '');
+      if (/already booked|busy now/i.test(msg)) {
+        toast.error(t.payment.errorSeatTaken);
+        // Force a fresh listPcs read next time so the seat-select
+        // grid doesn't show the just-lost PC as still-free.
+        pcsApi.invalidatePcsCache();
+        router.back();
+      } else {
+        toast.error(msg);
+      }
     } finally {
+      submittingRef.current = false;
       setConfirming(false);
     }
   };

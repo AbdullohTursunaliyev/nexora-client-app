@@ -13,11 +13,14 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { User } from 'lucide-react-native';
+import { router } from 'expo-router';
 import KeyboardSafeView from '../components/common/KeyboardSafeView';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
 import SimpleHeader from '../components/common/SimpleHeader';
 import ChevronDownIcon from '../components/icons/ChevronDownIcon';
+import MailIcon from '../components/icons/MailIcon';
 import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
@@ -66,14 +69,29 @@ export default function TeamFinderScreen() {
   const [microOnly, setMicroOnly] = useState(true);
   const [players, setPlayers] = useState<teamsApi.Player[]>([]);
   const [loading, setLoading] = useState(false);
-  const [myTeams, setMyTeams] = useState<teamsApi.Team[]>([]);
+  const [tenantTeams, setTenantTeams] = useState<teamsApi.Team[]>([]);
   const [showInvitePicker, setShowInvitePicker] = useState<teamsApi.Player | null>(null);
   const [invitingTeamId, setInvitingTeamId] = useState<number | null>(null);
+
+  // Incoming team invites — pre-fix this list never loaded because
+  // the FE service had no function for it, even though the BE
+  // endpoint shipped months ago. Users who received an invite saw
+  // nothing about it in the app.
+  const [invites, setInvites] = useState<teamsApi.TeamInvite[]>([]);
+  const [respondingInviteId, setRespondingInviteId] = useState<number | null>(null);
 
   // Create-team form
   const [newTeamName, setNewTeamName] = useState('');
   const [creating, setCreating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Bottom-sheet game picker. Replaces the cycle-button UX that
+  // pre-fix required users to tap up to 4 times to find Valorant —
+  // an awful interaction borrowed from a quick prototype that
+  // never got revised. Sheet pattern matches login + settings
+  // language pickers so the visual idiom is consistent across the
+  // app.
+  const [gameSheetOpen, setGameSheetOpen] = useState(false);
 
   const loadEverything = useCallback(
     async (surfaceSpinner = false) => {
@@ -87,7 +105,7 @@ export default function TeamFinderScreen() {
         // silently turned 401/network errors into "no players /
         // teams" which made the screen look broken instead of
         // surfacing the underlying network state.
-        const [players, teams] = await Promise.all([
+        const [players, teams, invitesList] = await Promise.all([
           teamsApi.searchPlayers({ game, micOnly: microOnly }).catch((e) => {
             toast.error(getErrorMessage(e));
             return [];
@@ -96,9 +114,15 @@ export default function TeamFinderScreen() {
             toast.error(getErrorMessage(e));
             return [];
           }),
+          // Invites list — silent on failure (it's a secondary
+          // surface). The primary "find players / teams" data is
+          // already loading, we don't want to spam two error
+          // toasts for one network hiccup.
+          teamsApi.listTeamInvites().catch(() => []),
         ]);
         setPlayers(players);
-        setMyTeams(teams);
+        setTenantTeams(teams);
+        setInvites(invitesList);
       } finally {
         if (surfaceSpinner) {
           setRefreshing(false);
@@ -107,15 +131,54 @@ export default function TeamFinderScreen() {
         }
       }
     },
-    [game, microOnly],
+    [game, microOnly, toast],
   );
+
+  const onRespondInvite = async (
+    inviteId: number,
+    action: 'accept' | 'decline',
+    teamName: string,
+    teamId: number,
+  ) => {
+    if (respondingInviteId) return;
+    setRespondingInviteId(inviteId);
+    try {
+      const res = await teamsApi.respondToTeamInvite(inviteId, action);
+      // Optimistic remove regardless of action — both accept and
+      // decline take the row out of the user's pending list.
+      setInvites((prev) => prev.filter((i) => i.id !== inviteId));
+      if (res.status === 'accepted') {
+        toast.success(t.teamFinder.inviteAcceptedToast.replace('{name}', teamName));
+        // Open the chat for the newly-joined team — gets the user
+        // into the conversation while the moment is fresh.
+        router.push({
+          pathname: '/team-chat',
+          params: { teamId: String(teamId), teamName },
+        });
+        // Refetch teams list in background so "My teams" includes
+        // the new membership on next visit.
+        void loadEverything();
+      } else {
+        toast.info(t.teamFinder.inviteDeclinedToast);
+      }
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+    } finally {
+      setRespondingInviteId(null);
+    }
+  };
 
   useEffect(() => {
     void loadEverything();
   }, [loadEverything]);
 
   const onPickTeamForInvite = (player: teamsApi.Player) => {
-    if (myTeams.length === 0) {
+    // Only OWNED teams matter for the picker — BE rejects invites
+    // from non-owner callers with 403. Pre-fix this branched on
+    // `tenantTeams.length` (all tenant teams), so a user in
+    // someone else's team would see the picker, tap that team,
+    // and get a Forbidden toast they couldn't act on.
+    if (ownedTeams.length === 0) {
       toast.info(t.teamFinder.noTeamHint);
       setTab('create');
       return;
@@ -143,10 +206,22 @@ export default function TeamFinderScreen() {
     setCreating(true);
     try {
       const team = await teamsApi.createTeam({ name, game });
-      setMyTeams((prev) => [team, ...prev]);
+      setTenantTeams((prev) => [team, ...prev]);
       setNewTeamName('');
       toast.success(t.teamFinder.createdToast);
-      setTab('find');
+      // Auto-navigate to the new team's chat. Pre-fix the user
+      // landed back on the Find tab with no visible trace of the
+      // team they just created — there was no "My Teams" section
+      // on the screen, so the only way to "find" their creation
+      // was to try inviting someone (which opens the picker that
+      // shows their owned teams). Dropping the user straight into
+      // chat matches what Telegram / Discord do after channel
+      // creation and lets them invite teammates immediately via
+      // the team-chat "..." menu / future invite flow.
+      router.push({
+        pathname: '/team-chat',
+        params: { teamId: String(team.id), teamName: team.name },
+      });
     } catch (e) {
       toast.error(getErrorMessage(e));
     } finally {
@@ -157,6 +232,31 @@ export default function TeamFinderScreen() {
   const filteredPlayers = useMemo(
     () => (microOnly ? players.filter((p) => p.has_mic !== false) : players),
     [players, microOnly],
+  );
+
+  // "My teams" = teams the user is in (owner OR member). Sorted so
+  // owned teams sit first — those are the ones with admin actions
+  // (invite, disband) and the user thinks of as "theirs".
+  // Pre-fix the FE used the un-filtered `tenantTeams` everywhere
+  // (variable was misleadingly named `myTeams`), which:
+  //   1. Showed every tenant team in the invite picker → tapping a
+  //      non-owned one 422'd with "Forbidden".
+  //   2. Made the eventual "My Teams" section impossible to build —
+  //      we couldn't distinguish own from other.
+  const myTeams = useMemo(
+    () =>
+      tenantTeams
+        .filter((tm) => tm.is_member === true || tm.is_owner === true)
+        .sort((a, b) => Number(b.is_owner) - Number(a.is_owner)),
+    [tenantTeams],
+  );
+
+  // Only owners can invite — BE returns 403 for non-owners on
+  // `/teams/{id}/invite`. Filter the picker to teams the user
+  // actually owns so we never let them tap into a guaranteed 403.
+  const ownedTeams = useMemo(
+    () => tenantTeams.filter((tm) => tm.is_owner === true),
+    [tenantTeams],
   );
 
   return (
@@ -196,37 +296,160 @@ export default function TeamFinderScreen() {
 
         {tab === 'find' ? (
           <>
+            {/* Incoming team invites — pre-fix this list was
+                returned by the BE for months but the FE service had
+                no function to fetch it, so invitees never saw their
+                pending team invites. Now each invite renders as a
+                card with Accept / Decline actions. Accept auto-
+                navigates to the team chat; both actions optimistically
+                remove the row from the list. */}
+            {invites.length > 0 && (
+              <View style={styles.invitesWrap}>
+                <View style={styles.invitesHeader}>
+                  <View style={styles.invitesIconWrap}>
+                    <MailIcon size={14} color="#00CFFF" />
+                  </View>
+                  <Text style={styles.invitesTitle}>
+                    {t.teamFinder.invitesTitle.replace('{n}', String(invites.length))}
+                  </Text>
+                </View>
+                {invites.map((inv) => {
+                  const isResponding = respondingInviteId === inv.id;
+                  return (
+                    <View key={inv.id} style={styles.inviteCard}>
+                      <View style={styles.inviteInfo}>
+                        <Text style={styles.inviteTeamName} numberOfLines={1}>
+                          {inv.team_name || t.teamFinder.unknownTeam}
+                        </Text>
+                        <Text style={styles.inviteMeta} numberOfLines={1}>
+                          {(inv.game || '—').toUpperCase()} · {t.teamFinder.inviteSlotsLabel.replace(
+                            '{n}',
+                            String(inv.members_max),
+                          )}
+                        </Text>
+                      </View>
+                      {isResponding ? (
+                        <ActivityIndicator color="#00CFFF" />
+                      ) : (
+                        <View style={styles.inviteActions}>
+                          <Button
+                            label={t.teamFinder.inviteAccept}
+                            variant="secondary"
+                            size="sm"
+                            onPress={() =>
+                              onRespondInvite(inv.id, 'accept', inv.team_name, inv.team_id)
+                            }
+                          />
+                          <Button
+                            label={t.teamFinder.inviteDecline}
+                            variant="ghost"
+                            size="sm"
+                            onPress={() =>
+                              onRespondInvite(inv.id, 'decline', inv.team_name, inv.team_id)
+                            }
+                          />
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* My Teams section — pre-fix the screen had NO place
+                to see your own teams. The only visible team-aware
+                surface was the invite picker (which only opens
+                when you tap "Invite" on a player). Now the user's
+                teams (owned + member) sit prominently at the top
+                of the Find tab, tappable to open chat. Owner teams
+                lead with a "Captain" badge for context. */}
+            {myTeams.length > 0 && (
+              <View style={styles.myTeamsWrap}>
+                <Text style={styles.myTeamsTitle}>
+                  {t.teamFinder.myTeamsTitle.replace('{n}', String(myTeams.length))}
+                </Text>
+                {myTeams.map((tm) => (
+                  <TouchableOpacity
+                    key={tm.id}
+                    style={styles.myTeamCard}
+                    activeOpacity={0.85}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/team-chat',
+                        params: { teamId: String(tm.id), teamName: tm.name },
+                      })
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={tm.name}
+                  >
+                    <View style={styles.myTeamIconWrap}>
+                      <Text style={styles.myTeamIconText}>
+                        {(tm.name?.[0] ?? '?').toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.myTeamInfo}>
+                      <View style={styles.myTeamNameRow}>
+                        <Text style={styles.myTeamName} numberOfLines={1}>
+                          {tm.name}
+                        </Text>
+                        {tm.is_owner && (
+                          <View style={styles.myTeamOwnerBadge}>
+                            <Text style={styles.myTeamOwnerBadgeText}>
+                              {t.teamChat.roleOwner}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.myTeamMeta} numberOfLines={1}>
+                        {tm.game.toUpperCase()} · {tm.members_count}/{tm.members_max}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
             <View style={styles.filterRow}>
               <FilterDropdown
                 label={t.teamFinder.gameDropdown}
                 value={game}
-                onPress={() => {
-                  // Cycle through the supported games. Real screen could
-                  // open a bottom-sheet picker; cycle is the smallest
-                  // workable hook until that ships.
-                  const idx = GAMES.indexOf(game);
-                  setGame(GAMES[(idx + 1) % GAMES.length]);
-                }}
+                onPress={() => setGameSheetOpen(true)}
               />
               {/* Skill filter is a coming-soon placeholder — Nexora
                   doesn't yet track ELO per player, so the dropdown
-                  surfaces a soon toast (audit MED). */}
-              <FilterDropdown
-                label={t.teamFinder.skillDropdown}
-                value="—"
-                onPress={() => toast.error(t.common.comingSoon)}
-              />
+                  is dimmed + tagged "Soon" instead of pretending to
+                  be a live control. Pre-fix this rendered as a
+                  normal dropdown that toast'd "coming soon" on tap,
+                  which read as a broken feature. Now the disabled
+                  look-and-feel makes the gating obvious. */}
+              <View style={styles.dropdownDisabledWrap}>
+                <FilterDropdown
+                  label={t.teamFinder.skillDropdown}
+                  value="—"
+                />
+                <View style={styles.dropdownSoonChip}>
+                  <Text style={styles.dropdownSoonChipText}>{t.profile.soon}</Text>
+                </View>
+              </View>
             </View>
 
+            {/* Mic-only toggle — similarly disabled. The BE returns
+                an empty list when `mic=1` because there's no
+                presence schema yet, so wiring it up would always
+                show "no players". Dim + label so users know it's
+                pending. */}
             <Pressable
-              style={styles.toggleRow}
-              onPress={() => setMicroOnly((m) => !m)}
+              style={[styles.toggleRow, styles.toggleRowDisabled]}
+              disabled
               hitSlop={8}
             >
-              <View style={[styles.checkbox, !microOnly && styles.checkboxOff]}>
-                {microOnly && <View style={styles.checkboxFill} />}
+              <View style={[styles.checkbox, styles.checkboxOff]} />
+              <Text style={[styles.toggleLabel, styles.toggleLabelDisabled]}>
+                {t.teamFinder.micToggle}
+              </Text>
+              <View style={styles.inlineSoonChip}>
+                <Text style={styles.inlineSoonChipText}>{t.profile.soon}</Text>
               </View>
-              <Text style={styles.toggleLabel}>{t.teamFinder.micToggle}</Text>
             </Pressable>
 
             <Text style={styles.sectionTitle}>{t.teamFinder.sectionPlayers}</Text>
@@ -239,65 +462,12 @@ export default function TeamFinderScreen() {
               <Text style={styles.emptyText}>{t.teamFinder.emptyPlayers}</Text>
             ) : (
               filteredPlayers.map((p) => (
-                <View key={p.user_id} style={styles.playerCard}>
-                  <Image
-                    source={{
-                      uri:
-                        p.avatar_url ??
-                        `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=141823&color=fff`,
-                    }}
-                    style={styles.avatar}
-                  />
-                  <View style={styles.playerInfo}>
-                    <View style={styles.nameRow}>
-                      <Text style={styles.playerName}>{p.name}</Text>
-                      <Text style={styles.playerLevel}>LVL {p.level}</Text>
-                    </View>
-                    <Text style={styles.playerRole}>
-                      {p.role} · <Text style={{ color: '#8B95A8' }}>{p.elo} ELO</Text>
-                    </Text>
-                    <View style={styles.statusRow}>
-                      <View
-                        style={[
-                          styles.statusDot,
-                          {
-                            backgroundColor:
-                              p.status === 'online'
-                                ? '#22C55E'
-                                : p.status === 'in-game'
-                                  ? '#F59E0B'
-                                  : '#6B7280',
-                          },
-                        ]}
-                      />
-                      <Text
-                        style={[
-                          styles.statusText,
-                          {
-                            color:
-                              p.status === 'online'
-                                ? '#22C55E'
-                                : p.status === 'in-game'
-                                  ? '#F59E0B'
-                                  : '#6B7280',
-                          },
-                        ]}
-                      >
-                        {p.status === 'online'
-                          ? t.teamFinder.statusOnline
-                          : p.status === 'in-game'
-                            ? t.teamFinder.statusInGame
-                            : t.teamFinder.statusOffline}
-                      </Text>
-                    </View>
-                  </View>
-                  <Button
-                    label={t.teamFinder.inviteBtn}
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => onPickTeamForInvite(p)}
-                  />
-                </View>
+                <PlayerRow
+                  key={p.user_id}
+                  player={p}
+                  onInvite={() => onPickTeamForInvite(p)}
+                  labels={t}
+                />
               ))
             )}
           </>
@@ -343,24 +513,36 @@ export default function TeamFinderScreen() {
       </View>
       </KeyboardSafeView>
 
+      {/* Team-picker modal — fixed layout: backdrop Pressable lives
+          OUTSIDE the card via absoluteFill, so it doesn't intercept
+          taps on the card content. The legacy `<Pressable> >
+          <Pressable onPress=stopPropagation>` pattern was the same
+          DOM idiom we removed from qr-scan + settings — it doesn't
+          map cleanly to RN's gesture system. */}
       <Modal
         visible={!!showInvitePicker}
         transparent
         animationType="fade"
         onRequestClose={() => setShowInvitePicker(null)}
       >
-        <Pressable style={styles.modalBackdrop} onPress={() => setShowInvitePicker(null)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setShowInvitePicker(null)}
+            accessibilityRole="button"
+            accessibilityLabel={t.teamFinder.cancelBtn}
+          />
+          <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>
               {t.teamFinder.invitePickerTitle.replace(
                 '{name}',
                 showInvitePicker?.name ?? '',
               )}
             </Text>
-            {myTeams.length === 0 ? (
+            {ownedTeams.length === 0 ? (
               <Text style={styles.emptyText}>{t.teamFinder.noTeamHint}</Text>
             ) : (
-              myTeams.map((tm) => (
+              ownedTeams.map((tm) => (
                 <Pressable
                   key={tm.id}
                   style={styles.teamRow}
@@ -384,10 +566,148 @@ export default function TeamFinderScreen() {
               fullWidth
               onPress={() => setShowInvitePicker(null)}
             />
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Game picker bottom sheet — replaces the cycle-button UX.
+          Sibling-backdrop layout (the same fix we applied to the
+          team picker above) keeps taps inside the sheet from
+          dismissing the modal. */}
+      <Modal
+        visible={gameSheetOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setGameSheetOpen(false)}
+        statusBarTranslucent
+      >
+        <View style={styles.sheetRoot}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setGameSheetOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel={t.teamFinder.cancelBtn}
+          />
+          <View
+            style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 16, 20) }]}
+          >
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>{t.teamFinder.gameSheetTitle}</Text>
+            <View style={styles.sheetList}>
+              {GAMES.map((g) => {
+                const isActive = g === game;
+                return (
+                  <TouchableOpacity
+                    key={g}
+                    style={[styles.sheetRow, isActive && styles.sheetRowActive]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setGame(g);
+                      setGameSheetOpen(false);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
+                  >
+                    <Text style={styles.sheetRowLabel}>{g}</Text>
+                    {isActive && <View style={styles.sheetRowCheck} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
+  );
+}
+
+/**
+ * Single player row — encapsulates the avatar fallback (Lucide User
+ * when the URL is missing or fails to load) and the `is_stub` UX
+ * hint. Pre-fix the screen rendered stub rows identically to real
+ * ones, so users saw fake "LVL 1, 1200 ELO, offline" data and
+ * couldn't tell which players were genuine presence vs. placeholder.
+ */
+function PlayerRow({
+  player,
+  onInvite,
+  labels,
+}: {
+  player: teamsApi.Player;
+  onInvite: () => void;
+  labels: ReturnType<typeof useT>;
+}) {
+  const [avatarBroken, setAvatarBroken] = useState(false);
+  const showAvatar = !!player.avatar_url && !avatarBroken;
+  const isStub = player.is_stub === true;
+
+  // Status colour resolver — same lookup as the v1 inline ternary
+  // but isolated so the JSX stays readable.
+  const statusColor =
+    player.status === 'online'
+      ? '#22C55E'
+      : player.status === 'in-game'
+        ? '#F59E0B'
+        : '#6B7280';
+  const statusLabel =
+    player.status === 'online'
+      ? labels.teamFinder.statusOnline
+      : player.status === 'in-game'
+        ? labels.teamFinder.statusInGame
+        : labels.teamFinder.statusOffline;
+
+  return (
+    <View style={styles.playerCard}>
+      {showAvatar ? (
+        <Image
+          source={{ uri: player.avatar_url }}
+          style={styles.avatar}
+          onError={() => setAvatarBroken(true)}
+        />
+      ) : (
+        <View style={[styles.avatar, styles.avatarFallback]}>
+          <User size={20} color="#00CFFF" strokeWidth={1.8} />
+        </View>
+      )}
+
+      <View style={styles.playerInfo}>
+        <View style={styles.nameRow}>
+          <Text style={styles.playerName}>{player.name}</Text>
+          {/* Level chip is the only "rank" surface we currently
+              have. We hide it for stub rows — showing LVL 1 to
+              everyone for stubs would falsely suggest a real
+              ranking system. */}
+          {!isStub && <Text style={styles.playerLevel}>LVL {player.level}</Text>}
+        </View>
+        <Text style={styles.playerRole}>
+          {player.role}
+          {!isStub && (
+            <>
+              {' · '}
+              <Text style={{ color: '#8B95A8' }}>{player.elo} ELO</Text>
+            </>
+          )}
+        </Text>
+        {/* Presence dot only when we have real presence data.
+            Stub rows show a static "from this club" hint instead
+            so users aren't misled into thinking the row is offline
+            when we just don't know. */}
+        {isStub ? (
+          <Text style={styles.stubHint}>{labels.teamFinder.stubHint}</Text>
+        ) : (
+          <View style={styles.statusRow}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
+          </View>
+        )}
+      </View>
+      <Button
+        label={labels.teamFinder.inviteBtn}
+        variant="secondary"
+        size="sm"
+        onPress={onInvite}
+      />
+    </View>
   );
 }
 
@@ -458,6 +778,245 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 14,
   },
+  toggleRowDisabled: {
+    opacity: 0.55,
+  },
+  toggleLabelDisabled: {
+    color: '#6B7280',
+  },
+  // Disabled-look wrapper around the Skill filter. Renders a small
+  // "Soon" chip in the top-right of the dropdown so the user sees
+  // the gating at a glance.
+  dropdownDisabledWrap: {
+    flex: 1,
+    position: 'relative',
+    opacity: 0.55,
+  },
+  dropdownSoonChip: {
+    position: 'absolute',
+    top: 4,
+    right: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 5,
+    backgroundColor: 'rgba(0, 207, 255, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.35)',
+  },
+  dropdownSoonChipText: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 8.5,
+    color: '#00CFFF',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  inlineSoonChip: {
+    marginLeft: 'auto',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0, 207, 255, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.3)',
+  },
+  inlineSoonChipText: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 9.5,
+    color: '#00CFFF',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  // Incoming-invites block — sits at the top of the Find tab.
+  invitesWrap: {
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  invitesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  invitesIconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0, 207, 255, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  invitesTitle: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 12.5,
+    color: '#00CFFF',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  inviteCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 207, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.20)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+    marginBottom: 8,
+  },
+  inviteInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  inviteTeamName: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13.5,
+    color: Colors.text,
+  },
+  inviteMeta: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 11.5,
+    color: '#8B95A8',
+  },
+  inviteActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  // My Teams section — visible at the top of the Find tab, lists
+  // the user's owner+member teams as tappable cards that open the
+  // team chat. Pre-fix this section didn't exist on the screen at
+  // all — created teams were invisible until the user tried to
+  // invite someone.
+  myTeamsWrap: {
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  myTeamsTitle: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 12.5,
+    color: '#00CFFF',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  myTeamCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#141823',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.12)',
+  },
+  // Initial-letter tile — cheap visual identifier until we wire
+  // real team_cover URLs through the team listing payload.
+  myTeamIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 207, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  myTeamIconText: {
+    fontFamily: Fonts.inter.bold,
+    fontSize: 16,
+    color: '#00CFFF',
+  },
+  myTeamInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  myTeamNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  myTeamName: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13.5,
+    color: Colors.text,
+    flexShrink: 1,
+  },
+  myTeamOwnerBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 5,
+    backgroundColor: 'rgba(245, 158, 11, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+  },
+  myTeamOwnerBadgeText: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 9,
+    color: '#F59E0B',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  myTeamMeta: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 11.5,
+    color: '#8B95A8',
+  },
+  // Bottom-sheet picker styles — shared by the game picker. Same
+  // visual idiom as login + settings language sheets.
+  sheetRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: '#141823',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+  },
+  sheetHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#3A4250',
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  sheetTitle: {
+    fontFamily: Fonts.inter.bold,
+    fontSize: 17,
+    color: Colors.text,
+    marginBottom: 14,
+  },
+  sheetList: { gap: 8 },
+  sheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#1A1F2B',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  sheetRowActive: {
+    borderColor: '#00CFFF',
+    backgroundColor: 'rgba(0, 207, 255, 0.06)',
+  },
+  sheetRowLabel: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    color: Colors.text,
+  },
+  sheetRowCheck: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#00CFFF',
+  },
   checkbox: {
     width: 18,
     height: 18,
@@ -507,6 +1066,24 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1F2533' },
+  // Lucide-icon fallback when avatar_url is empty / broken. Same
+  // dimensions as the real avatar so the row layout doesn't shift
+  // on load-error.
+  avatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.2)',
+  },
+  // Static hint shown in place of the presence dot/status text on
+  // stub player rows — communicates "we know they're in this club
+  // but we don't have live presence yet".
+  stubHint: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 4,
+  },
   playerInfo: { flex: 1 },
   nameRow: {
     flexDirection: 'row',

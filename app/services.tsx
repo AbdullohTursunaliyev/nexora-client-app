@@ -39,17 +39,23 @@ export default function ServicesScreen() {
 
   // Real PC code instead of the hardcoded "PC-07" placeholder
   // (audit HIGH). Polled the same way active-session does — list
-  // PCs, find the busy/reserved one for the current user.
+  // PCs, find the one owned by the current user.
   const [activePc, setActivePc] = useState<Pc | null>(null);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const myClientId = activeMembership?.client_id ?? null;
   useEffect(() => {
     let cancelled = false;
     pcsApi
       .listPcs()
       .then((list) => {
         if (cancelled) return;
-        const mine = list.find((p) => p.status === 'busy' || p.status === 'reserved');
-        setActivePc(mine ?? null);
+        // Pre-fix this was `p.status === 'busy' || p.status === 'reserved'`
+        // — two bugs there: (1) BE returns 'booked', not 'reserved';
+        // (2) status-only matching picked a stranger's PC the moment
+        // any concurrent user in the tenant started a session. The
+        // shared `findMyPc` helper filters by booking.is_mine so
+        // multi-user clubs get the right PC code on the support form.
+        setActivePc(pcsApi.findMyPc(list, myClientId));
       })
       .catch(() => {
         // Soft fail — the screen still works, the PC label just stays
@@ -59,7 +65,7 @@ export default function ServicesScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [myClientId]);
 
   const pcLabel = activePc?.code ?? '—';
 

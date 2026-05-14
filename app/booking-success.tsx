@@ -226,7 +226,12 @@ export default function BookingSuccessScreen() {
   return (
     <View style={styles.root}>
       <ImageBackground
-        source={{ uri: Images.onboarding.cyberCity }}
+        // Reuses the onboarding hero arena photo as a subtle backdrop
+        // (30% opacity) so the success card sits on a branded surface
+        // rather than a flat dark void. The image key was renamed from
+        // `cyberCity` → `heroArena` during the onboarding professional
+        // redesign — kept the same Unsplash asset, just a clearer name.
+        source={{ uri: Images.onboarding.heroArena }}
         style={styles.bg}
         imageStyle={{ opacity: 0.3 }}
       >

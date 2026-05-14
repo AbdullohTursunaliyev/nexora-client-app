@@ -4,20 +4,19 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TouchableOpacity,
   Image,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { User } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
-import { Images } from '../constants/Images';
 import SimpleHeader from '../components/common/SimpleHeader';
 import { useToast } from '../components/common/Toast';
 import * as friendsApi from '../lib/api/services/friends';
 import { getErrorMessage } from '../lib/api/client';
-import type { FriendRequest } from '../lib/api/services/friends';
+import type { FriendRequest, FriendUser } from '../lib/api/services/friends';
 import MailIcon from '../components/icons/MailIcon';
 import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
@@ -96,11 +95,11 @@ export default function FriendRequestsScreen() {
         ) : (
           requests.map((r) => {
             const u = r.from_user;
-            const name = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || u.login;
+            const name = displayNameOf(u);
             const isActing = actingId === r.id;
             return (
               <View key={r.id} style={styles.card}>
-                <Image source={{ uri: u.avatar_url || Images.avatar }} style={styles.avatar} />
+                <RequestAvatar uri={u.avatar_url} name={name} />
                 <View style={styles.info}>
                   <Text style={styles.name}>{name}</Text>
                   <Text style={styles.login}>@{u.login}</Text>
@@ -129,6 +128,46 @@ export default function FriendRequestsScreen() {
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * Reusable display-name helper — matches the one in friends-list.
+ * Falls back through "First Last" → "First" → "@login" → "User".
+ */
+function displayNameOf(u: Pick<FriendUser, 'first_name' | 'last_name' | 'login'>): string {
+  const full = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim();
+  return full || u.login || 'User';
+}
+
+/**
+ * Avatar tile with graceful fallback — same component idea as
+ * friends-list's AvatarTile (kept duplicated locally to avoid a
+ * shared-component file just for this; if we add a third consumer
+ * we'll lift it into `components/common/AvatarTile.tsx`).
+ *
+ * Pre-fix this screen used `Images.avatar` (a `require()`-d static
+ * asset) as the `{uri}` source. Image interprets that as a literal
+ * URI string, so broken-avatar rows rendered the React Native
+ * broken-image glyph instead of a friendly placeholder.
+ */
+function RequestAvatar({ uri, name }: { uri?: string; name: string }) {
+  const [broken, setBroken] = useState(false);
+  const showImage = !!uri && !broken;
+  if (!showImage) {
+    return (
+      <View style={[styles.avatar, styles.avatarFallback]}>
+        <User size={20} color="#00CFFF" strokeWidth={1.8} />
+      </View>
+    );
+  }
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.avatar}
+      onError={() => setBroken(true)}
+      accessibilityLabel={name}
+    />
   );
 }
 
@@ -180,6 +219,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   avatar: { width: 42, height: 42, borderRadius: 21 },
+  avatarFallback: {
+    backgroundColor: '#1F2533',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   info: { flex: 1 },
   name: { fontFamily: Fonts.inter.semiBold, fontSize: 13.5, color: Colors.text },
   login: { fontFamily: Fonts.inter.regular, fontSize: 11.5, color: '#8B95A8', marginTop: 2 },

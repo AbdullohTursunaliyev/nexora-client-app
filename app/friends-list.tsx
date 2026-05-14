@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,14 +13,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { User } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
-import { Images } from '../constants/Images';
 import SimpleHeader from '../components/common/SimpleHeader';
 import { useToast } from '../components/common/Toast';
+import { useDialog } from '../components/common/AppDialog';
 import * as friendsApi from '../lib/api/services/friends';
 import { getErrorMessage } from '../lib/api/client';
-import type { FriendUser, FriendRequest } from '../lib/api/services/friends';
+import type {
+  FriendUser,
+  FriendRequest,
+  FriendSearchResult,
+  FriendRelationStatus,
+} from '../lib/api/services/friends';
 import UsersIcon from '../components/icons/UsersIcon';
 import MailIcon from '../components/icons/MailIcon';
 import SearchIcon from '../components/icons/SearchIcon';
@@ -29,12 +35,23 @@ import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import KeyboardSafeView from '../components/common/KeyboardSafeView';
 
+/**
+ * Tab enum — replaces the old magic-number state (0 = "Mine", 1 =
+ * "Search"). Strings carry meaning in stack traces and survive a
+ * future refactor when we add a third tab (e.g. "Sent").
+ */
+type Tab = 'mine' | 'search';
+
+const MIN_SEARCH_QUERY = 1;
+
 export default function FriendsListScreen() {
   const t = useT();
   const toast = useToast();
-  const [tab, setTab] = useState(0);
+  const dialog = useDialog();
+  const [tab, setTab] = useState<Tab>('mine');
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [pending, setPending] = useState<FriendRequest[]>([]);
+  const [outgoing, setOutgoing] = useState<FriendRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   // Error state — pre-fix (FE-M2) the catches swallowed the network
@@ -43,227 +60,585 @@ export default function FriendsListScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<FriendUser[]>([]);
+  const [results, setResults] = useState<FriendSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  // Distinguishes "user hasn't searched yet" from "search returned
+  // zero". Pre-fix both states showed the same "search empty" card,
+  // which read as "we don't know anyone" before the user typed.
+  const [hasSearched, setHasSearched] = useState(false);
+
+  /**
+   * Per-row action lock — keys are mobile_user_ids that have an
+   * in-flight POST/DELETE. We render a spinner instead of the
+   * action button while a row is locked, which stops double-tap
+   * from firing duplicate sendRequest / remove POSTs.
+   *
+   * Pre-fix the screen had ONE shared `loading` flag — async
+   * actions weren't gated at all and a user with a heavy thumb
+   * could trigger 2-3 sendRequest calls before the toast appeared.
+   * The BE row-lock catches the duplicate at the DB level, but the
+   * FE-side spinner is the better UX.
+   */
+  const [actingIds, setActingIds] = useState<Set<number>>(new Set());
+  const lockRow = useCallback((id: number) => {
+    setActingIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+  const unlockRow = useCallback((id: number) => {
+    setActingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }, []);
 
   const loadFriends = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      // Single network request — the BE returns both friends + pending
-      // in one payload, so we don't fan out two identical GETs.
+      // Single network request — the BE returns friends + incoming +
+      // outgoing in one payload, so we don't fan out three GETs.
       const data = await friendsApi.listFriendsAndRequests();
       setFriends(data.friends);
       setPending(data.pending);
-    } catch {
-      setLoadError(t.common.error);
+      setOutgoing(data.outgoing);
+    } catch (e) {
+      setLoadError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, []);
 
   useEffect(() => {
-    loadFriends();
+    void loadFriends();
   }, [loadFriends]);
 
   const onSearch = async () => {
-    if (!query.trim()) return;
+    const q = query.trim();
+    if (q.length < MIN_SEARCH_QUERY) {
+      setResults([]);
+      setHasSearched(false);
+      return;
+    }
     setSearching(true);
+    setHasSearched(true);
     try {
-      const found = await friendsApi.searchFriends(query.trim());
+      const found = await friendsApi.searchFriends(q);
       setResults(found);
     } catch (e) {
       toast.error(getErrorMessage(e));
+      setResults([]);
     } finally {
       setSearching(false);
     }
   };
 
   const onSendRequest = async (userId: number) => {
+    if (actingIds.has(userId)) return;
+    lockRow(userId);
     try {
-      await friendsApi.sendFriendRequest(userId);
-      toast.success(t.friends.sentToast);
+      // Read the BE-reported status. When the recipient ALREADY had
+      // a pending request to us, the BE auto-promotes the pair to
+      // 'accepted' and returns status='accepted'. Without this read
+      // the FE would optimistically flip the row to 'outgoing' (Sent)
+      // for a row that's actually now a friend — a brief but
+      // confusing visual stutter until the next loadFriends() resync.
+      const res = await friendsApi.sendFriendRequest(userId);
+      const becameFriend = res.status === 'accepted';
+      toast.success(becameFriend ? t.friendRequests.acceptedToast : t.friends.sentToast);
+      setResults((prev) =>
+        prev.map((r) =>
+          r.id === userId
+            ? { ...r, relation_status: becameFriend ? 'accepted' : 'outgoing' }
+            : r,
+        ),
+      );
+      if (becameFriend) {
+        // Refresh the Mine tab so the new friend shows up in the list
+        // next time the user navigates to it. We don't await — the
+        // search-tab UI has already updated optimistically.
+        void loadFriends();
+      }
     } catch (e) {
       toast.error(getErrorMessage(e));
+    } finally {
+      unlockRow(userId);
     }
   };
 
-  const onRemove = async (userId: number) => {
+  /**
+   * Cancel an outgoing pending request from inside a SearchResultRow.
+   * Same actingIds + error toast path as the Mine-tab cancel handler,
+   * so the search tab's UI guarantees match the friends tab's.
+   * Pre-fix this was an inline arrow with no lock + silent failure on
+   * BE error — a regression vs. the other action paths.
+   */
+  const onCancelFromSearch = async (userId: number) => {
+    if (actingIds.has(userId)) return;
+    lockRow(userId);
+    try {
+      await friendsApi.cancelOutgoingRequest(userId);
+      toast.info(t.friends.cancelledToast);
+      setResults((prev) =>
+        prev.map((r) => (r.id === userId ? { ...r, relation_status: 'none' } : r)),
+      );
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+    } finally {
+      unlockRow(userId);
+    }
+  };
+
+  const onRemove = async (userId: number, displayName: string) => {
+    if (actingIds.has(userId)) return;
+    // Confirm before destructive removal — pre-fix a single tap
+    // unfriended without any prompt, and the toast that confirmed
+    // "removed" appeared AFTER the row was already gone. An
+    // accidental tap had no recovery path (the user would have to
+    // re-find and re-friend the person).
+    const ok = await dialog.confirm({
+      title: t.friends.removeConfirmTitle,
+      message: t.friends.removeConfirmMessage.replace('{name}', displayName),
+      confirmLabel: t.friends.removeConfirmYes,
+      cancelLabel: t.friends.removeConfirmNo,
+      destructive: true,
+    });
+    if (!ok) return;
+    lockRow(userId);
     try {
       await friendsApi.removeFriend(userId);
       toast.info(t.friends.removedToast);
-      await loadFriends();
+      // Optimistic remove from local list — saves an extra round-trip
+      // and keeps the UI responsive while loadFriends() refetches in
+      // the background.
+      setFriends((prev) => prev.filter((f) => f.id !== userId));
+      void loadFriends();
     } catch (e) {
       toast.error(getErrorMessage(e));
+    } finally {
+      unlockRow(userId);
+    }
+  };
+
+  const onCancelOutgoing = async (requestId: number, recipientUserId: number) => {
+    if (actingIds.has(recipientUserId)) return;
+    lockRow(recipientUserId);
+    try {
+      // BE deletes the friendship regardless of status, so the
+      // remove endpoint works for cancel-outgoing too. Semantic
+      // alias keeps the call site readable.
+      await friendsApi.cancelOutgoingRequest(recipientUserId);
+      toast.info(t.friends.cancelledToast);
+      setOutgoing((prev) => prev.filter((r) => r.id !== requestId));
+    } catch (e) {
+      toast.error(getErrorMessage(e));
+    } finally {
+      unlockRow(recipientUserId);
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await loadFriends();
+      if (tab === 'mine') {
+        await loadFriends();
+      } else {
+        await onSearch();
+      }
     } finally {
       setRefreshing(false);
     }
   };
 
-  const renderFriend = (u: FriendUser) => {
-    const name = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || u.login;
-    return (
-      <View key={u.id} style={styles.userCard}>
-        <Image source={{ uri: u.avatar_url || Images.avatar }} style={styles.avatar} />
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>{name}</Text>
-          <Text style={styles.userLogin}>@{u.login}</Text>
-        </View>
-        <Button
-          label={t.friends.removeBtn}
-          variant="ghost"
-          size="sm"
-          onPress={() => onRemove(u.id)}
-        />
-      </View>
-    );
-  };
-
-  const renderSearchResult = (u: FriendUser) => {
-    const name = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || u.login;
-    return (
-      <View key={u.id} style={styles.userCard}>
-        <Image source={{ uri: u.avatar_url || Images.avatar }} style={styles.avatar} />
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>{name}</Text>
-          <Text style={styles.userLogin}>@{u.login}</Text>
-        </View>
-        <Button
-          label={t.friends.addBtn}
-          variant="secondary"
-          size="sm"
-          onPress={() => onSendRequest(u.id)}
-        />
-      </View>
-    );
-  };
+  // Friends-tab header counts. Memoised so a parent re-render
+  // doesn't recompute the section headings unnecessarily.
+  const friendsCountLabel = useMemo(
+    () => t.friends.sectionMine.replace('{n}', String(friends.length)),
+    [friends.length, t],
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardSafeView>
-      <SimpleHeader title={t.friends.headerTitle} />
+        <SimpleHeader title={t.friends.headerTitle} />
 
-      <View style={styles.tabsContainer}>
-        {[t.friends.tabMine, t.friends.tabSearch].map((label, i) => {
-          const isActive = tab === i;
-          return (
-            <Pressable
-              key={label}
-              style={[styles.tab, isActive && styles.tabActive]}
-              onPress={() => setTab(i)}
-            >
-              <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+        <View style={styles.tabsContainer}>
+          {(['mine', 'search'] as Tab[]).map((id) => {
+            const isActive = tab === id;
+            const label = id === 'mine' ? t.friends.tabMine : t.friends.tabSearch;
+            return (
+              <Pressable
+                key={id}
+                style={[styles.tab, isActive && styles.tabActive]}
+                onPress={() => setTab(id)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
+              >
+                <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
-      {tab === 0 ? (
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
-          }
-        >
-          {pending.length > 0 && (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={styles.requestsBanner}
-              onPress={() => router.push('/friend-requests')}
-            >
-              <View style={styles.requestsBannerIcon}>
-                <MailIcon size={18} color="#00CFFF" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.requestsBannerTitle}>
-                  {t.friends.pendingTitle.replace('{n}', String(pending.length))}
-                </Text>
-                <Text style={styles.requestsBannerSub}>{t.friends.pendingSub}</Text>
-              </View>
-              <ChevronRightIcon size={18} color="#8B95A8" />
-            </TouchableOpacity>
-          )}
-
-          <Text style={styles.sectionTitle}>
-            {t.friends.sectionMine.replace('{n}', String(friends.length))}
-          </Text>
-
-          {loading ? (
-            <ActivityIndicator color={Colors.primary} style={{ marginTop: 32 }} />
-          ) : loadError ? (
-            // Pre-fix `loadError` was set but never rendered — a 401 /
-            // network failure looked like "you have no friends" with no
-            // hint of an actual problem. Now we surface it explicitly
-            // so the user can retry instead of staring at fake silence.
-            <View style={styles.emptyCard}>
-              <View style={styles.emptyIconWrap}>
-                <UsersIcon size={28} color="#EF4444" />
-              </View>
-              <Text style={styles.emptyTitle}>{loadError}</Text>
-              <Button
-                label={t.common.retry}
-                variant="primary"
-                size="sm"
-                onPress={loadFriends}
+        {tab === 'mine' ? (
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={Colors.primary}
               />
-            </View>
-          ) : friends.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <View style={styles.emptyIconWrap}>
-                <UsersIcon size={28} color="#8B95A8" />
-              </View>
-              <Text style={styles.emptyTitle}>{t.friends.emptyTitle}</Text>
-              <Text style={styles.emptyText}>{t.friends.emptySub}</Text>
-            </View>
-          ) : (
-            friends.map(renderFriend)
-          )}
-        </ScrollView>
-      ) : (
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          <View style={styles.searchBar}>
-            <SearchIcon size={16} color="#8B95A8" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder={t.friends.searchPlaceholder}
-              placeholderTextColor="#6B7280"
-              value={query}
-              onChangeText={setQuery}
-              onSubmitEditing={onSearch}
-              autoCapitalize="none"
-            />
-            {searching && <ActivityIndicator color={Colors.primary} />}
-          </View>
+            }
+          >
+            {pending.length > 0 && (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={styles.requestsBanner}
+                onPress={() => router.push('/friend-requests')}
+                accessibilityRole="button"
+              >
+                <View style={styles.requestsBannerIcon}>
+                  <MailIcon size={18} color="#00CFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.requestsBannerTitle}>
+                    {t.friends.pendingTitle.replace('{n}', String(pending.length))}
+                  </Text>
+                  <Text style={styles.requestsBannerSub}>{t.friends.pendingSub}</Text>
+                </View>
+                <ChevronRightIcon size={18} color="#8B95A8" />
+              </TouchableOpacity>
+            )}
 
-          {results.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <View style={styles.emptyIconWrap}>
-                <SearchIcon size={28} color="#8B95A8" />
+            {/* Outgoing section — pre-fix the BE returned these but
+                the FE silently dropped them, so a user with 3
+                "waiting" requests had no idea they existed and no
+                way to cancel them. Now they live in a dedicated
+                section with a Cancel button per row. */}
+            {outgoing.length > 0 && (
+              <View style={styles.outgoingWrap}>
+                <Text style={styles.outgoingTitle}>
+                  {t.friends.outgoingTitle.replace('{n}', String(outgoing.length))}
+                </Text>
+                {outgoing.map((r) => {
+                  const u = r.from_user;
+                  const name = displayNameOf(u);
+                  return (
+                    <View key={r.id} style={styles.userCard}>
+                      <AvatarTile uri={u.avatar_url} name={name} />
+                      <View style={styles.userInfo}>
+                        <Text style={styles.userName}>{name}</Text>
+                        <Text style={styles.userLogin}>@{u.login}</Text>
+                      </View>
+                      {actingIds.has(u.id) ? (
+                        <ActivityIndicator color={Colors.primary} />
+                      ) : (
+                        <Button
+                          label={t.friends.cancelBtn}
+                          variant="ghost"
+                          size="sm"
+                          onPress={() => onCancelOutgoing(r.id, u.id)}
+                        />
+                      )}
+                    </View>
+                  );
+                })}
               </View>
-              <Text style={styles.emptyTitle}>{t.friends.searchEmptyTitle}</Text>
-              <Text style={styles.emptyText}>{t.friends.searchEmptySub}</Text>
+            )}
+
+            <Text style={styles.sectionTitle}>{friendsCountLabel}</Text>
+
+            {loading ? (
+              <ActivityIndicator color={Colors.primary} style={{ marginTop: 32 }} />
+            ) : loadError ? (
+              // Pre-fix `loadError` was set but never rendered — a 401
+              // / network failure looked like "you have no friends"
+              // with no hint of an actual problem. Now we surface it
+              // explicitly so the user can retry.
+              <View style={styles.emptyCard}>
+                <View style={styles.emptyIconWrap}>
+                  <UsersIcon size={28} color="#EF4444" />
+                </View>
+                <Text style={styles.emptyTitle}>{loadError}</Text>
+                <Button
+                  label={t.common.retry}
+                  variant="primary"
+                  size="sm"
+                  onPress={loadFriends}
+                />
+              </View>
+            ) : friends.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <View style={styles.emptyIconWrap}>
+                  <UsersIcon size={28} color="#8B95A8" />
+                </View>
+                <Text style={styles.emptyTitle}>{t.friends.emptyTitle}</Text>
+                <Text style={styles.emptyText}>{t.friends.emptySub}</Text>
+              </View>
+            ) : (
+              friends.map((u) => {
+                const name = displayNameOf(u);
+                const isActing = actingIds.has(u.id);
+                return (
+                  <View key={u.id} style={styles.userCard}>
+                    <AvatarTile uri={u.avatar_url} name={name} />
+                    <View style={styles.userInfo}>
+                      <Text style={styles.userName}>{name}</Text>
+                      <Text style={styles.userLogin}>@{u.login}</Text>
+                    </View>
+                    {isActing ? (
+                      <ActivityIndicator color={Colors.primary} />
+                    ) : (
+                      <Button
+                        label={t.friends.removeBtn}
+                        variant="ghost"
+                        size="sm"
+                        onPress={() => onRemove(u.id, name)}
+                      />
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={Colors.primary}
+              />
+            }
+          >
+            <View style={styles.searchBar}>
+              <SearchIcon size={16} color="#8B95A8" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder={t.friends.searchPlaceholder}
+                placeholderTextColor="#6B7280"
+                value={query}
+                onChangeText={(v) => {
+                  setQuery(v);
+                  // Reset has-searched when the input is cleared so
+                  // the "type to search" prompt comes back instead
+                  // of leaving the previous "no results" empty card.
+                  if (v.trim().length === 0) {
+                    setResults([]);
+                    setHasSearched(false);
+                  }
+                }}
+                onSubmitEditing={onSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                maxLength={64}
+                editable={!searching}
+              />
+              {searching && <ActivityIndicator color={Colors.primary} />}
             </View>
-          ) : (
-            <View>
-              <Text style={styles.sectionTitle}>
-                {t.friends.foundCount.replace('{n}', String(results.length))}
-              </Text>
-              {results.map(renderSearchResult)}
-            </View>
-          )}
-        </ScrollView>
-      )}
+
+            {/* Three distinct empty states:
+                  1. User hasn't searched yet → "type to search" hint
+                  2. Search returned zero → "no users match" message
+                  3. Has results → render rows
+                Pre-fix #1 and #2 were collapsed into the same card,
+                so the prompt before searching read as "you have no
+                friends to search". */}
+            {!hasSearched ? (
+              <View style={styles.emptyCard}>
+                <View style={styles.emptyIconWrap}>
+                  <SearchIcon size={28} color="#8B95A8" />
+                </View>
+                <Text style={styles.emptyTitle}>{t.friends.searchPromptTitle}</Text>
+                <Text style={styles.emptyText}>{t.friends.searchPromptSub}</Text>
+              </View>
+            ) : results.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <View style={styles.emptyIconWrap}>
+                  <SearchIcon size={28} color="#8B95A8" />
+                </View>
+                <Text style={styles.emptyTitle}>{t.friends.searchEmptyTitle}</Text>
+                <Text style={styles.emptyText}>{t.friends.searchEmptySub}</Text>
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.sectionTitle}>
+                  {t.friends.foundCount.replace('{n}', String(results.length))}
+                </Text>
+                {results.map((u) => (
+                  <SearchResultRow
+                    key={u.id}
+                    user={u}
+                    actingIds={actingIds}
+                    // Accept-incoming uses the same send endpoint — BE
+                    // auto-promotes the reverse-pending pair to
+                    // accepted. `onSendRequest` now reads the returned
+                    // status and flips the row directly to 'accepted'
+                    // for this case (no flash of 'outgoing'), so we
+                    // reuse the same handler here.
+                    onSend={onSendRequest}
+                    onAccept={onSendRequest}
+                    onCancel={onCancelFromSearch}
+                    labels={t}
+                  />
+                ))}
+              </View>
+            )}
+          </ScrollView>
+        )}
       </KeyboardSafeView>
     </SafeAreaView>
   );
+}
+
+/**
+ * Reusable display-name helper. Falls back through the form
+ * "First Last" → "First" → "@login" → fallback "User".
+ */
+function displayNameOf(u: { first_name?: string; last_name?: string; login: string }): string {
+  const full = `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim();
+  return full || u.login || 'User';
+}
+
+/**
+ * Avatar tile — handles BOTH "no URL provided" and "URL provided
+ * but image failed to load" cases by rendering a Lucide User icon
+ * on a tinted background. Pre-fix the screen used
+ * `Images.avatar` as the `{uri}` source which is a `require()`-d
+ * static — the Image component interpreted it as a literal URI
+ * string and rendered a broken-image glyph.
+ */
+function AvatarTile({ uri, name }: { uri?: string; name: string }) {
+  const [broken, setBroken] = useState(false);
+  const showImage = !!uri && !broken;
+  if (!showImage) {
+    return (
+      <View style={[styles.avatar, styles.avatarFallback]}>
+        <User size={20} color="#00CFFF" strokeWidth={1.8} />
+      </View>
+    );
+  }
+  return (
+    <Image
+      source={{ uri }}
+      style={styles.avatar}
+      onError={() => setBroken(true)}
+      accessibilityLabel={name}
+    />
+  );
+}
+
+/**
+ * Single search-result row — owns the action chip whose label +
+ * variant depend on the BE-reported relation_status. Pre-fix every
+ * row rendered "Add", which 422'd when the row was already friends
+ * or already pending.
+ */
+function SearchResultRow({
+  user,
+  actingIds,
+  onSend,
+  onAccept,
+  onCancel,
+  labels,
+}: {
+  user: FriendSearchResult;
+  actingIds: Set<number>;
+  onSend: (id: number) => void;
+  onAccept: (id: number) => void;
+  onCancel: (id: number) => void;
+  labels: ReturnType<typeof useT>;
+}) {
+  const name = displayNameOf(user);
+  const isActing = actingIds.has(user.id);
+
+  const renderAction = () => {
+    if (isActing) {
+      return <ActivityIndicator color={Colors.primary} />;
+    }
+    return renderActionByStatus(user.relation_status, {
+      onAdd: () => onSend(user.id),
+      onAccept: () => onAccept(user.id),
+      onCancel: () => onCancel(user.id),
+      labels,
+    });
+  };
+
+  return (
+    <View style={styles.userCard}>
+      <AvatarTile uri={user.avatar_url} name={name} />
+      <View style={styles.userInfo}>
+        <Text style={styles.userName}>{name}</Text>
+        <Text style={styles.userLogin}>@{user.login}</Text>
+      </View>
+      {renderAction()}
+    </View>
+  );
+}
+
+function renderActionByStatus(
+  status: FriendRelationStatus,
+  handlers: {
+    onAdd: () => void;
+    onAccept: () => void;
+    onCancel: () => void;
+    labels: ReturnType<typeof useT>;
+  },
+) {
+  const { onAdd, onAccept, onCancel, labels } = handlers;
+  switch (status) {
+    case 'accepted':
+      // Already friends — no action, just a small pill so the user
+      // sees why "Add" is missing.
+      return (
+        <View style={styles.statusPill}>
+          <Text style={styles.statusPillText}>{labels.friends.alreadyFriendsBadge}</Text>
+        </View>
+      );
+    case 'outgoing':
+      return (
+        <Button
+          label={labels.friends.cancelBtn}
+          variant="ghost"
+          size="sm"
+          onPress={onCancel}
+        />
+      );
+    case 'incoming':
+      return (
+        <Button
+          label={labels.friendRequests.accept}
+          variant="secondary"
+          size="sm"
+          onPress={onAccept}
+        />
+      );
+    case 'blocked':
+      return (
+        <View style={[styles.statusPill, styles.statusPillBlocked]}>
+          <Text style={styles.statusPillText}>{labels.friends.blockedBadge}</Text>
+        </View>
+      );
+    case 'none':
+    default:
+      return (
+        <Button
+          label={labels.friends.addBtn}
+          variant="secondary"
+          size="sm"
+          onPress={onAdd}
+        />
+      );
+  }
 }
 
 const styles = StyleSheet.create({
@@ -307,12 +682,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   requestsBannerTitle: { fontFamily: Fonts.inter.semiBold, fontSize: 13.5, color: Colors.text },
-  requestsBannerSub: { fontFamily: Fonts.inter.regular, fontSize: 11.5, color: '#8B95A8', marginTop: 2 },
+  requestsBannerSub: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 11.5,
+    color: '#8B95A8',
+    marginTop: 2,
+  },
+  outgoingWrap: {
+    marginBottom: 4,
+  },
+  outgoingTitle: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13,
+    color: '#8B95A8',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginTop: 4,
+    marginBottom: 8,
+  },
   sectionTitle: {
     fontFamily: Fonts.inter.semiBold,
     fontSize: 14,
     color: Colors.text,
-    marginTop: 8,
+    marginTop: 14,
     marginBottom: 10,
   },
   searchBar: {
@@ -342,9 +734,44 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   avatar: { width: 42, height: 42, borderRadius: 21 },
+  // Lucide-icon fallback when avatar_url is empty or fails to load.
+  // Same dimensions as the real avatar so the row layout doesn't
+  // shift when the URL resolves vs. fails.
+  avatarFallback: {
+    backgroundColor: '#1F2533',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   userInfo: { flex: 1 },
   userName: { fontFamily: Fonts.inter.semiBold, fontSize: 13.5, color: Colors.text },
-  userLogin: { fontFamily: Fonts.inter.regular, fontSize: 11.5, color: '#8B95A8', marginTop: 2 },
+  userLogin: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 11.5,
+    color: '#8B95A8',
+    marginTop: 2,
+  },
+  // Status pills for relation_status states that don't have an
+  // actionable button (already friends, blocked).
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(34, 197, 94, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  statusPillBlocked: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  statusPillText: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 11,
+    color: '#22C55E',
+    letterSpacing: 0.3,
+  },
   emptyCard: {
     backgroundColor: '#141823',
     borderRadius: 16,

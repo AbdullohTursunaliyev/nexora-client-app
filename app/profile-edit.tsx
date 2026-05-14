@@ -35,6 +35,23 @@ import * as authApi from '../lib/api/services/auth';
 const NAME_MAX_LENGTH = 64;
 const PHONE_MAX_LENGTH = 32;
 
+// Avatar upload constraints — MUST match the BE validator in
+// MobileAuthController::uploadAvatar:
+//   mimes:jpg,jpeg,png,webp · max:5120 KB · 64x64 .. 2000x2000 px
+// Mirroring them on the FE lets us reject obviously-bad picks
+// BEFORE the upload round-trip and surface a precise reason
+// ("file too large", "format unsupported") instead of a generic
+// "couldn't upload" after a multi-MB POST.
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+const AVATAR_MIN_DIMENSION = 64;
+const AVATAR_MAX_DIMENSION = 2000;
+const AVATAR_ALLOWED_MIME = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+]);
+
 export default function ProfileEditScreen() {
   return (
     <AuthGate>
@@ -57,6 +74,59 @@ function ProfileEditInner() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   /**
+   * Translate a generic upload error into a precise, user-readable
+   * toast. Reads the raw error message (which `getErrorMessage`
+   * pulls from the Laravel 422 validator) and matches against the
+   * substrings Laravel uses for each rule failure on the
+   * `avatar` field. Falls back to the generic "couldn't upload"
+   * toast when nothing matches — better to be vague than wrong.
+   *
+   * Pre-fix every upload failure surfaced the raw Laravel string
+   * (English, technical, e.g. "The avatar field must not be greater
+   * than 5120 kilobytes"). The user couldn't act on it because:
+   *   - The text was English on a UZ/RU-locale phone
+   *   - "5120 kilobytes" isn't intuitive ("oh, 5 MB!" is)
+   *   - It didn't tell them WHAT to do next ("resize and retry")
+   * Now each known failure has a localised, actionable line.
+   */
+  const mapAvatarUploadError = (error: unknown): string => {
+    const raw = getErrorMessage(error).toLowerCase();
+    // Order matters — check the most specific patterns first. Some
+    // BE messages overlap (e.g. "image" appears in both
+    // "must be an image" and "image dimensions") so we want the
+    // more-specific dimensions match BEFORE the generic image one.
+    if (raw.includes('kilobyte') || raw.includes('too large') || raw.includes('size')) {
+      return t.profileEdit.avatarTooLarge;
+    }
+    if (
+      raw.includes('dimension') ||
+      raw.includes('width') ||
+      raw.includes('height') ||
+      raw.includes('pixels')
+    ) {
+      return t.profileEdit.avatarBadDimensions;
+    }
+    if (
+      raw.includes('mimes') ||
+      raw.includes('file of type') ||
+      raw.includes('must be an image') ||
+      raw.includes('not a valid image') ||
+      raw.includes('image')
+    ) {
+      return t.profileEdit.avatarBadFormat;
+    }
+    if (raw.includes('network') || raw.includes('timeout') || raw.includes('econ')) {
+      return t.profileEdit.avatarNetworkError;
+    }
+    if (raw.includes('server') || raw.includes('500') || raw.includes('503')) {
+      return t.profileEdit.avatarServerError;
+    }
+    // Unknown shape — return the generic "couldn't upload" rather
+    // than the raw English Laravel string, which the user can't act on.
+    return t.profileEdit.avatarUploadFailed;
+  };
+
+  /**
    * Native avatar picker — opens the OS gallery, lets the user crop
    * to a square, then uploads the result to the BE. The BE returns
    * the public URL of the stored avatar which we patch into the form
@@ -67,6 +137,12 @@ function ProfileEditInner() {
    * pre-pops the OS dialog. On denial we show a toast — no settings
    * deep-link because the user can still paste a URL into the input
    * below.
+   *
+   * Pre-check gauntlet: BEFORE the upload POST, the asset metadata
+   * (size/mime/dimensions) is matched against the BE's validator
+   * rules. Rejecting locally saves the user a multi-second
+   * upload-then-fail cycle and surfaces a clearer "your photo is too
+   * big" instead of a generic 422 toast.
    */
   const onPickAvatar = async () => {
     if (uploadingAvatar) return;
@@ -94,16 +170,67 @@ function ProfileEditInner() {
         // the 88pt size we render at. Saves the BE upload route from
         // multi-MB files when the user picks a fresh phone-camera shot.
         quality: 0.85,
+        // Explicit single-select — same fix as the qr-scan gallery
+        // picker. Some Expo SDK versions default to multi-select on
+        // Android, which would let the user pick multiple images
+        // even though we only ever upload one.
+        allowsMultipleSelection: false,
       });
       if (picked.canceled) return;
       const asset = picked.assets?.[0];
       if (!asset?.uri) return;
 
+      // ── Pre-checks (mirror the BE validator) ──
+      // 1) File size — BE max is 5120 KB. `fileSize` is in BYTES on
+      //    expo-image-picker. Field is undefined on some Android
+      //    devices that don't report file size for content-URIs; we
+      //    skip the check there and let the BE catch it.
+      if (typeof asset.fileSize === 'number' && asset.fileSize > AVATAR_MAX_BYTES) {
+        const actualMb = (asset.fileSize / 1024 / 1024).toFixed(1);
+        toast.error(
+          t.profileEdit.avatarTooLargeWithSize
+            .replace('{size}', actualMb)
+            .replace('{max}', String(AVATAR_MAX_BYTES / 1024 / 1024)),
+        );
+        return;
+      }
+
+      // 2) Mime type — BE accepts jpg/jpeg/png/webp only. HEIC (iOS
+      //    Live Photos default) is the common rejection — we surface
+      //    a clear "convert to JPG" hint via the i18n string.
+      const mimeType = (asset.mimeType ?? 'image/jpeg').toLowerCase();
+      if (!AVATAR_ALLOWED_MIME.has(mimeType)) {
+        toast.error(t.profileEdit.avatarBadFormat);
+        return;
+      }
+
+      // 3) Dimensions — BE requires 64..2000 on each axis. The crop
+      //    UI lets the user choose any region of any size, including
+      //    something smaller than 64x64 if their source is a tiny
+      //    thumbnail. Width/height are reported as numbers when the
+      //    picker decoded the image successfully.
+      if (typeof asset.width === 'number' && typeof asset.height === 'number') {
+        if (asset.width < AVATAR_MIN_DIMENSION || asset.height < AVATAR_MIN_DIMENSION) {
+          toast.error(
+            t.profileEdit.avatarTooSmallWithDims.replace('{min}', String(AVATAR_MIN_DIMENSION)),
+          );
+          return;
+        }
+        if (asset.width > AVATAR_MAX_DIMENSION || asset.height > AVATAR_MAX_DIMENSION) {
+          toast.error(
+            t.profileEdit.avatarTooBigDimsWithDims.replace(
+              '{max}',
+              String(AVATAR_MAX_DIMENSION),
+            ),
+          );
+          return;
+        }
+      }
+
       setUploadingAvatar(true);
       // Derive filename + mime from the asset metadata when available;
       // fall back to JPEG (the most common phone-camera output).
       const fileName = asset.fileName ?? `avatar-${Date.now()}.jpg`;
-      const mimeType = asset.mimeType ?? 'image/jpeg';
 
       const result = await authApi.uploadAvatar({
         uri: asset.uri,
@@ -118,7 +245,10 @@ function ProfileEditInner() {
       setAvatarUrl(newUrl);
       toast.success(t.profileEdit.avatarUploadedToast);
     } catch (e) {
-      toast.error(getErrorMessage(e));
+      // mapAvatarUploadError turns Laravel's English validator messages
+      // (which getErrorMessage extracts verbatim) into localised,
+      // actionable toasts.
+      toast.error(mapAvatarUploadError(e));
     } finally {
       setUploadingAvatar(false);
     }

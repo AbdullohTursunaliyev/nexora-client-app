@@ -162,13 +162,49 @@ export interface ClientSummary {
   };
 }
 
-/** PC / Seat */
+/**
+ * Per-PC booking info attached to each row in the `/mobile/pcs`
+ * catalog response (mirrors MobilePcService::catalog()).
+ *
+ * `is_mine` is the only reliable cross-status way for the FE to tell
+ * "this PC is mine" — the catalog doesn't expose Session.client_id
+ * directly, so for `status === 'busy'` the only ownership signal is
+ * the still-attached PcBooking row's `is_mine` flag (PcBooking lives
+ * until `reserved_until` passes or the user explicitly unbooks).
+ *
+ * Pre-fix the FE had no notion of this field at all — `/active-session`
+ * and `/services` both picked the first busy PC in the tenant, which
+ * was a stranger's PC anywhere with more than one concurrent user.
+ */
+export interface PcBookingInfo {
+  client_id: number;
+  reserved_from?: string | null;
+  reserved_until?: string | null;
+  is_mine: boolean;
+}
+
+/**
+ * PC / Seat — shape returned by `/mobile/pcs`.
+ *
+ * The `status` union mirrors what MobilePcService::catalog() actually
+ * emits. Pre-fix the type advertised `'reserved'` but the wire value
+ * is `'booked'` (see `$isBusy ? 'busy' : ($isBooked ? 'booked' : 'free')`
+ * in catalog()). Comparing `p.status === 'reserved'` therefore never
+ * matched anything, which broke the post-QR-scan flow on
+ * /active-session and the support-screen PC-code badge on /services.
+ */
 export interface Pc {
   id: number;
   code: string;
   zone_id?: number | null;
   zone_name?: string;
-  status: 'free' | 'busy' | 'offline' | 'reserved' | string;
+  status: 'free' | 'busy' | 'offline' | 'booked' | string;
   ip_address?: string;
   price_per_hour?: number;
+  /** Booking info — present when a PcBooking row exists for this PC. */
+  booking?: PcBookingInfo | null;
+  /** UI hint from BE: caller can place a booking here (mirrors $mine logic). */
+  can_book?: boolean;
+  /** UI hint from BE: caller can release this booking. */
+  can_unbook?: boolean;
 }

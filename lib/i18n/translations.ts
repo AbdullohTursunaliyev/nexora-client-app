@@ -457,6 +457,18 @@ type Dict = {
     durationHours: string;
     emptyTitle: string;
     emptySub: string;
+    /** Cancel-booking CTA label on a confirmed row. */
+    cancelBtn: string;
+    /** Confirmation dialog title before cancelling. */
+    cancelConfirmTitle: string;
+    /** Confirmation dialog body — explains BE-side 1h-buffer policy. */
+    cancelConfirmMessage: string;
+    /** Destructive button label in the cancel-confirm dialog. */
+    cancelConfirmBtn: string;
+    /** Keep-booking button label in the cancel-confirm dialog. */
+    cancelKeepBtn: string;
+    /** Toast shown after a successful cancel. */
+    cancelSuccess: string;
   };
   clubJoin: {
     headerTitle: string;
@@ -469,6 +481,21 @@ type Dict = {
     joinBtn: string;
     errorEmpty: string;
     successToast: string;
+    // ── Password fields (added with the per-club password fix) ──
+    /** Label above the password input field. */
+    passwordLabel: string;
+    /** Placeholder inside the password input — "{n}" filled with min len. */
+    passwordPlaceholder: string;
+    /** Hint text under the password input — "{n}" filled with min len. */
+    passwordHint: string;
+    /** Toast when password is too short (FE pre-check). */
+    errorPasswordTooShort: string;
+    /** a11y label on the show-password toggle. */
+    passwordShow: string;
+    /** a11y label on the hide-password toggle. */
+    passwordHide: string;
+    /** Toast after QR scan auto-fills the code — prompts password entry. */
+    scannedFillPasswordHint: string;
   };
   clubPreviewScreen: {
     headerTitle: string;
@@ -505,6 +532,25 @@ type Dict = {
     avatarUploadFailed: string;
     /** Toast when the OS gallery permission is declined. */
     galleryDenied: string;
+    // ── Specific avatar-upload error toasts (BE validator failures
+    //    pre-checked on the FE for instant feedback). ──
+    /** File exceeds the 5 MB cap. Generic phrasing (no size shown). */
+    avatarTooLarge: string;
+    /** File exceeds 5 MB — `{size}` filled with the actual MB,
+     *  `{max}` with the cap (5). */
+    avatarTooLargeWithSize: string;
+    /** Width/height outside the 64..2000 range — generic. */
+    avatarBadDimensions: string;
+    /** Image smaller than 64×64. `{min}` filled with 64. */
+    avatarTooSmallWithDims: string;
+    /** Image larger than 2000×2000. `{max}` filled with 2000. */
+    avatarTooBigDimsWithDims: string;
+    /** File mime not in jpg/jpeg/png/webp. Mentions HEIC needs conversion. */
+    avatarBadFormat: string;
+    /** Network failure during upload (no internet, timeout). */
+    avatarNetworkError: string;
+    /** Server-side failure (5xx, BE bug). */
+    avatarServerError: string;
   };
   writeReview: {
     headerTitle: string;
@@ -520,6 +566,22 @@ type Dict = {
     submitBtn: string;
     successToast: string;
     errorMissing: string;
+  };
+  myReviews: {
+    /** Screen header — "Mening sharhlarim" / "Мои отзывы". */
+    headerTitle: string;
+    /** "{n} ta sharh yozdingiz" count subtitle. */
+    countLabel: string;
+    /** Empty-state title. */
+    emptyTitle: string;
+    /** Empty-state subtitle nudge. */
+    emptySub: string;
+    /** Sub-rating chip: technical (PCs / hardware). */
+    technicalLabel: string;
+    /** Sub-rating chip: peripherals (mouse / keyboard / headset). */
+    peripheralsLabel: string;
+    /** Fallback club name on rows where tenant info is missing. */
+    unknownClub: string;
   };
   achievements: {
     headerTitle: string;
@@ -611,6 +673,27 @@ type Dict = {
     statusOnline: string;
     statusInGame: string;
     statusOffline: string;
+    // ── v2 additions (audit fixes) ──
+    /** Section heading for the incoming-invites list — "{n}" filled. */
+    invitesTitle: string;
+    /** Accept button on a single invite card. */
+    inviteAccept: string;
+    /** Decline button on a single invite card. */
+    inviteDecline: string;
+    /** Toast after accepting — `{name}` filled with team name. */
+    inviteAcceptedToast: string;
+    /** Toast after declining. */
+    inviteDeclinedToast: string;
+    /** Fallback when an invite arrives with no team_name. */
+    unknownTeam: string;
+    /** Slots-label inside the invite card — `{n}` filled with members_max. */
+    inviteSlotsLabel: string;
+    /** Static hint shown in place of presence dot on `is_stub` rows. */
+    stubHint: string;
+    /** Title of the bottom-sheet game picker. */
+    gameSheetTitle: string;
+    /** "My teams" section heading on the Find tab. `{n}` filled. */
+    myTeamsTitle: string;
   };
   clubReviewsList: {
     headerTitle: string;
@@ -871,6 +954,29 @@ type Dict = {
     emptySub: string;
     sentToast: string;
     removedToast: string;
+    // ── v2 additions (audit fixes) ──
+    /** "Type to search" empty state title before any search. */
+    searchPromptTitle: string;
+    /** Subtitle under the search-prompt title. */
+    searchPromptSub: string;
+    /** Section title for outgoing pending requests — "{n}" filled. */
+    outgoingTitle: string;
+    /** Action label for cancelling an outgoing request. */
+    cancelBtn: string;
+    /** Toast after cancelling an outgoing request. */
+    cancelledToast: string;
+    /** Confirmation dialog title for unfriending. */
+    removeConfirmTitle: string;
+    /** Confirmation dialog message — `{name}` filled. */
+    removeConfirmMessage: string;
+    /** Confirmation dialog primary (destructive) button. */
+    removeConfirmYes: string;
+    /** Confirmation dialog cancel button. */
+    removeConfirmNo: string;
+    /** Search-result pill shown when the row is already a friend. */
+    alreadyFriendsBadge: string;
+    /** Search-result pill shown when the row is blocked. */
+    blockedBadge: string;
   };
   friendRequests: {
     headerTitle: string;
@@ -897,6 +1003,25 @@ type Dict = {
     emptySub: string;
     /** Empty-state CTA — opens /discover. */
     discoverBtn: string;
+    // ── v2 additions (singleton refactor + polish) ──
+    /** Count label under the header: "N ta saqlangan" / "N saved". */
+    countLabel: string;
+    /** Toast after a single unfavorite. `{name}` filled with the club. */
+    removedToast: string;
+    /** Header pill — opens the "Clear all" confirm dialog. */
+    clearAllAction: string;
+    /** Confirm dialog title for clearing all favorites. */
+    clearAllTitle: string;
+    /** Confirm dialog message — `{n}` filled with the count. */
+    clearAllMessage: string;
+    /** Confirm dialog primary button (destructive). */
+    clearAllConfirm: string;
+    /** Confirm dialog secondary button. */
+    clearAllCancel: string;
+    /** Toast after the user confirms "Clear all". */
+    clearedToast: string;
+    /** Display fallback when a club row has no name (rare). */
+    fallbackName: string;
   };
   aiAssistant: {
     name: string;
@@ -928,10 +1053,25 @@ type Dict = {
     actionRemote: string;
     actionRemoteSub: string;
     popularTopics: string;
+    /**
+     * Legacy hardcoded placeholders, kept around so other surfaces
+     * that may still reference them don't crash. Pre-fix the help
+     * screen showed three static topic labels here and tapping any of
+     * them just opened the ticket-submit modal — so users could
+     * neither read an answer nor distinguish between topics. The
+     * screen now calls `/mobile/help/topics` which returns 8 real
+     * question + answer pairs in the active locale.
+     */
     topic1: string;
     topic2: string;
     topic3: string;
     viewAll: string;
+    /** Empty-state copy shown when the BE FAQ list is empty / 404s. */
+    topicsEmpty: string;
+    /** Loading state while the FAQ list is in flight. */
+    topicsLoading: string;
+    /** "Didn't find what you needed?" CTA above the contact actions. */
+    stillNeedHelp: string;
     ticketSubtitle: string;
     ticketSubject: string;
     ticketSubjectPlaceholder: string;
@@ -956,6 +1096,41 @@ type Dict = {
     membersSoon: string;
     /** Placeholder text shown when the Settings tab is selected but the BE mutation isn't wired. */
     settingsSoon: string;
+    // ── v2 additions ──
+    /** "(siz)" / "(вы)" suffix on the current-user member row. */
+    you: string;
+    /** Captain / Owner badge on the team's owner row. */
+    roleOwner: string;
+    /** Invited badge on a member who hasn't accepted yet. */
+    roleInvited: string;
+    /** Empty-state copy in the Members tab when the BE returns nothing. */
+    membersEmpty: string;
+    /** a11y label on the "..." header menu button. */
+    menuA11y: string;
+    /** Action-sheet row: leave the team (member-only). */
+    leaveAction: string;
+    /** Action-sheet row: disband the team (owner-only). */
+    disbandAction: string;
+    /** Confirm dialog title for leaving. */
+    leaveConfirmTitle: string;
+    /** Confirm dialog message for leaving. */
+    leaveConfirmMessage: string;
+    /** Confirm dialog primary button for leaving. */
+    leaveConfirmYes: string;
+    /** Confirm dialog cancel button for leaving. */
+    leaveConfirmNo: string;
+    /** Toast after leaving. */
+    leftToast: string;
+    /** Confirm dialog title for disbanding. */
+    disbandConfirmTitle: string;
+    /** Confirm dialog message for disbanding. */
+    disbandConfirmMessage: string;
+    /** Confirm dialog primary button for disbanding. */
+    disbandConfirmYes: string;
+    /** Confirm dialog cancel button for disbanding. */
+    disbandConfirmNo: string;
+    /** Toast after disbanding. */
+    disbandedToast: string;
   };
   partyBooking: {
     headerTitle: string;
@@ -1119,6 +1294,8 @@ type Dict = {
     galleryDenied: string;
     /** Toast when an image was picked but no QR could be decoded. */
     galleryDecodeFailed: string;
+    /** Toast when the picker returned an empty/missing URI (rare Android edge case). */
+    galleryPickFailed: string;
     /** Hint text shown under the scanner viewfinder. */
     alignHint: string;
     // ─── v2 redesign additions ───
@@ -1180,6 +1357,74 @@ type Dict = {
     tabChat: string;
     tabSettings: string;
     open: string;
+    /** Title shown when no PC was matched to the user after polling. */
+    awaitingTitle: string;
+    /** Sub-text under awaitingTitle — explains the next action. */
+    awaitingSub: string;
+    /** Title shown when reservation is confirmed but session hasn't started. */
+    pendingTitle: string;
+    /** Sub-text under pendingTitle — clarifies the booked-but-not-busy state. */
+    pendingSub: string;
+  };
+  /**
+   * Transaction history screen — reachable from Settings → History.
+   * Lists every wallet transaction (topup, cashback, package buy,
+   * subscription, rank bonus, mission bonus, charge, refund) newest
+   * first. Pre-fix the Settings row routed to /(tabs)/bookings, so
+   * the user landed on the reservation list instead of their actual
+   * money-in-and-out log.
+   */
+  transactionHistory: {
+    headerTitle: string;
+    /** Filter chip labels. */
+    filterAll: string;
+    filterTopups: string;
+    filterBonuses: string;
+    filterCharges: string;
+    /** Empty-state title shown when listTransactions returns []. */
+    emptyTitle: string;
+    /** Empty-state subtitle. */
+    emptySub: string;
+    /** Sub-row labels per known transaction type. */
+    typeTopup: string;
+    typeBonus: string;
+    typePackage: string;
+    typeSubscription: string;
+    typeTierBonus: string;
+    typeMissionBonus: string;
+    typeCharge: string;
+    typeRefund: string;
+    /** Fallback row label when BE returns an unrecognised type. */
+    typeOther: string;
+    /** Top-up CTA shown on the empty state, deep-links to /wallet-topup. */
+    topupCta: string;
+  };
+  /**
+   * Notification settings screen — reachable from Settings →
+   * "Bildirishnoma sozlamalari". Local-only preferences (AsyncStorage)
+   * for per-category push delivery. BE push pipeline is "soon", so the
+   * toggles are remembered for when delivery actually wires up; in
+   * the meantime they suppress the bell badge for muted categories
+   * without affecting the inbox list itself.
+   */
+  notificationSettings: {
+    headerTitle: string;
+    /** Banner explaining the local-only state. */
+    soonBannerTitle: string;
+    soonBannerSub: string;
+    /** Section: per-category toggles. */
+    categoriesSection: string;
+    catBookings: string;
+    catBookingsSub: string;
+    catTournaments: string;
+    catTournamentsSub: string;
+    catOffers: string;
+    catOffersSub: string;
+    catSystem: string;
+    catSystemSub: string;
+    /** Footer link to view the inbox itself. */
+    viewInboxLabel: string;
+    viewInboxSub: string;
   };
   profile: {
     guestName: string;
@@ -1201,6 +1446,15 @@ type Dict = {
     loyaltyBtnSoon: string;
     hours: string;
     soon: string;
+    /** Section heading above the upcoming-features block (below Settings). */
+    soonSection: string;
+    /** Subtitle under the section heading — explains the section is
+     *  the feature pipeline ("upcoming features", "being built", etc.). */
+    soonSubtitle: string;
+    /** a11y hint when the "Tez orada" section is collapsed (tap to expand). */
+    soonExpandHint: string;
+    /** a11y hint when the "Tez orada" section is expanded (tap to collapse). */
+    soonCollapseHint: string;
     menu: {
       ai: string;
       aiTips: string;
@@ -1624,6 +1878,13 @@ export const translations: Record<Locale, Dict> = {
       joinBtn: "Qo'shilish",
       errorEmpty: 'Klub kodini kiriting',
       successToast: "Klubga qo'shildingiz!",
+      passwordLabel: 'Klub paroli',
+      passwordPlaceholder: 'Kamida {n} ta belgi',
+      passwordHint: "Bu parol shu klubga tegishli — kelajakda kirish uchun saqlanadi. Kamida {n} ta belgi.",
+      errorPasswordTooShort: "Parol kamida {n} ta belgi bo'lishi kerak",
+      passwordShow: "Parolni ko'rsatish",
+      passwordHide: 'Parolni yashirish',
+      scannedFillPasswordHint: "Kod kiritildi — endi parolni yozing",
     },
     clubPreviewScreen: {
       headerTitle: "Klub haqida",
@@ -1649,6 +1910,14 @@ export const translations: Record<Locale, Dict> = {
       avatarUploadedToast: 'Avatar yangilandi',
       avatarUploadFailed: "Avatar yuklab bo'lmadi, qayta urinib ko'ring",
       galleryDenied: 'Galereyaga ruxsat berilmadi',
+      avatarTooLarge: 'Rasm juda katta. Maksimum 5 MB',
+      avatarTooLargeWithSize: 'Rasm juda katta ({size} MB). Maksimum {max} MB',
+      avatarBadDimensions: "Rasm o'lchami noto'g'ri. 64×64 dan kichik yoki 2000×2000 dan katta bo'lmasin",
+      avatarTooSmallWithDims: "Rasm juda kichik. Minimum {min}×{min} piksel kerak",
+      avatarTooBigDimsWithDims: "Rasm o'lchami juda katta. Maksimum {max}×{max} piksel",
+      avatarBadFormat: "Format qo'llab-quvvatlanmaydi. JPG, PNG yoki WEBP yuboring (HEIC bo'lsa, avval JPG ga aylantiring)",
+      avatarNetworkError: "Internet aloqasi yo'q. Wi-Fi yoki mobil internetni tekshiring",
+      avatarServerError: 'Server xatosi. Birozdan keyin qayta urinib ko\'ring',
     },
     writeReview: {
       headerTitle: 'Sharh yozish',
@@ -1664,6 +1933,15 @@ export const translations: Record<Locale, Dict> = {
       submitBtn: 'Yuborish',
       successToast: 'Sharhingiz qabul qilindi',
       errorMissing: "Reyting va sharh to'liq bo'lishi kerak",
+    },
+    myReviews: {
+      headerTitle: 'Mening sharhlarim',
+      countLabel: '{n} ta sharh yozgansiz',
+      emptyTitle: "Hali sharh yo'q",
+      emptySub: 'Klubga tashrif buyurganingizda fikringizni qoldiring — bu boshqa o\'yinchilarga yordam beradi.',
+      technicalLabel: 'Texnik',
+      peripheralsLabel: 'Aksessuarlar',
+      unknownClub: 'Klub',
     },
     achievements: {
       headerTitle: 'Yutuqlar',
@@ -1752,6 +2030,16 @@ export const translations: Record<Locale, Dict> = {
       statusOnline: 'Online',
       statusInGame: "O'yinda",
       statusOffline: 'Offline',
+      invitesTitle: 'Yangi takliflar · {n}',
+      inviteAccept: 'Qabul',
+      inviteDecline: 'Rad',
+      inviteAcceptedToast: "{name} jamoasiga qo'shildingiz",
+      inviteDeclinedToast: 'Taklif rad etildi',
+      unknownTeam: 'Jamoa',
+      inviteSlotsLabel: '{n} ta joy',
+      stubHint: 'Klub ishtirokchisi',
+      gameSheetTitle: "O'yinni tanlang",
+      myTeamsTitle: "Mening jamoalarim · {n}",
     },
     clubReviewsList: {
       headerTitle: 'Sharhlar',
@@ -1993,6 +2281,17 @@ export const translations: Record<Locale, Dict> = {
       emptySub: '"Qidirish" tabidan boshqa o\'yinchilarni izlang va do\'st qilib qo\'shing',
       sentToast: "Do'stlik so'rovi yuborildi",
       removedToast: "Do'stlardan olib tashlandi",
+      searchPromptTitle: 'Foydalanuvchini qidiring',
+      searchPromptSub: "Login yoki ismni kiritib qidirish tugmasini bosing",
+      outgoingTitle: "Yuborilgan so'rovlar · {n}",
+      cancelBtn: 'Bekor qilish',
+      cancelledToast: "So'rov bekor qilindi",
+      removeConfirmTitle: "Do'stlardan olib tashlash?",
+      removeConfirmMessage: "{name} bilan do'stlik bekor qilinadi.",
+      removeConfirmYes: 'Olib tashlash',
+      removeConfirmNo: 'Bekor',
+      alreadyFriendsBadge: "Do'st",
+      blockedBadge: 'Bloklangan',
     },
     friendRequests: {
       headerTitle: "So'rovlar",
@@ -2016,6 +2315,15 @@ export const translations: Record<Locale, Dict> = {
       emptyTitle: "Sevimli klublar yo'q",
       emptySub: "Klub sahifasida ❤ tugmasini bosing — bu yerda ko'rinadi.",
       discoverBtn: 'Klublarni topish',
+      countLabel: '{n} ta saqlangan',
+      removedToast: '{name} olib tashlandi',
+      clearAllAction: 'Tozalash',
+      clearAllTitle: "Hammasini o'chirish?",
+      clearAllMessage: "Sevimlilardan {n} ta klub o'chiriladi. Bu amalni qaytarib bo'lmaydi.",
+      clearAllConfirm: "O'chirish",
+      clearAllCancel: 'Bekor qilish',
+      clearedToast: "Sevimlilar tozalandi",
+      fallbackName: 'Klub',
     },
     aiAssistant: {
       name: 'Nexora AI',
@@ -2046,11 +2354,14 @@ export const translations: Record<Locale, Dict> = {
       actionSubmitSub: "So'rovingizni yuboring",
       actionRemote: 'Masofaviy yordam',
       actionRemoteSub: 'Masofaviy yordam olish',
-      popularTopics: 'Mashhur mavzular',
+      popularTopics: 'Tez-tez beriladigan savollar',
       topic1: "Bronni o'zgartirish / bekor qilish",
       topic2: "To'lov va qaytarish",
       topic3: 'Ball va sodiqlik dasturi',
       viewAll: "Barchasini ko'rish",
+      topicsEmpty: "Hozircha savol-javoblar mavjud emas.",
+      topicsLoading: "Yuklanmoqda...",
+      stillNeedHelp: "Javob topa olmadingizmi? Quyidagi kanallar orqali biz bilan bog'laning.",
       ticketSubtitle: "Sizga qanday yordam kerakligini batafsil yozing",
       ticketSubject: 'Mavzu',
       ticketSubjectPlaceholder: 'Masalan: To\'lov muammosi',
@@ -2073,6 +2384,23 @@ export const translations: Record<Locale, Dict> = {
       emptyChat: "Hali xabar yo'q. Birinchi xabarni yozing.",
       membersSoon: "A'zolar paneli tez orada\nJamoa a'zolari, rollar va elo bu yerda chiqadi",
       settingsSoon: "Jamoa sozlamalari tez orada\nNomi, logosi, qoidalari va ruxsatlar shu yerda boshqariladi",
+      you: 'siz',
+      roleOwner: 'Kapitan',
+      roleInvited: 'Taklif qilingan',
+      membersEmpty: "A'zolar topilmadi",
+      menuA11y: "Jamoa amallari",
+      leaveAction: "Jamoadan chiqish",
+      disbandAction: "Jamoani tarqatish",
+      leaveConfirmTitle: "Jamoadan chiqasizmi?",
+      leaveConfirmMessage: "Siz endi bu chatda yoza olmaysiz va yangi xabarlar kelmaydi.",
+      leaveConfirmYes: "Chiqish",
+      leaveConfirmNo: "Bekor",
+      leftToast: "Jamoadan chiqdingiz",
+      disbandConfirmTitle: "Jamoani tarqatasizmi?",
+      disbandConfirmMessage: "Bu amalni qaytarib bo'lmaydi. Barcha a'zolar va xabarlar o'chiriladi.",
+      disbandConfirmYes: "Tarqatish",
+      disbandConfirmNo: "Bekor",
+      disbandedToast: "Jamoa tarqatildi",
     },
     partyBooking: {
       headerTitle: "Birga o'ynash",
@@ -2219,6 +2547,7 @@ export const translations: Record<Locale, Dict> = {
       cameraDenied: "Kameraga ruxsat berilmadi. Sozlamalardan yoqing.",
       galleryDenied: 'Galereyaga ruxsat berilmadi',
       galleryDecodeFailed: 'Rasmda QR kod topilmadi',
+      galleryPickFailed: "Rasmni ochib bo'lmadi. Boshqa rasmni tanlang",
       alignHint: "QR kodni kvadrat ichiga joylashtiring",
       viewfinderTitle: 'Kamerani oching',
       viewfinderSub: "Stikerni kameraga to'g'rilang — kod avtomatik o'qiladi",
@@ -2258,6 +2587,49 @@ export const translations: Record<Locale, Dict> = {
       tabChat: 'Chat',
       tabSettings: 'Sozlamalar',
       open: 'Ochiq',
+      awaitingTitle: 'Tasdiqlash kutilmoqda',
+      awaitingSub:
+        "Sizning kompyuteringiz hali topilmadi. Iltimos, operatorga murojaat qiling yoki QR kodni qaytadan skaner qiling.",
+      pendingTitle: "Bron tasdiqlandi",
+      pendingSub:
+        "Sessiya hali boshlanmagan. Kompyuteringizga o'ting va operator sessiyani ochishini kuting.",
+    },
+    transactionHistory: {
+      headerTitle: 'Tranzaksiyalar tarixi',
+      filterAll: 'Barchasi',
+      filterTopups: "To'ldirishlar",
+      filterBonuses: 'Bonuslar',
+      filterCharges: 'Hisobdan yechilgan',
+      emptyTitle: "Tranzaksiyalar yo'q",
+      emptySub:
+        "Balansingizni to'ldirganingizdan keyin shu yerda barcha to'lov tarixi paydo bo'ladi.",
+      typeTopup: "Balansni to'ldirish",
+      typeBonus: 'Keshbek',
+      typePackage: "Paket sotib olindi",
+      typeSubscription: 'Obuna',
+      typeTierBonus: 'Daraja bonusi',
+      typeMissionBonus: 'Missiya mukofoti',
+      typeCharge: 'Hisobdan yechildi',
+      typeRefund: "Qaytarib berildi",
+      typeOther: 'Boshqa',
+      topupCta: "Balansni to'ldirish",
+    },
+    notificationSettings: {
+      headerTitle: 'Bildirishnoma sozlamalari',
+      soonBannerTitle: "Push xabarnomalar tez orada",
+      soonBannerSub:
+        "Hozircha sozlamalar lokal saqlanadi. Push yetkazib berish ishga tushgach, tanlovingiz avtomatik qo'llaniladi.",
+      categoriesSection: 'Kategoriyalar',
+      catBookings: 'Bronlar',
+      catBookingsSub: "Bron tasdig'i va eslatmalar",
+      catTournaments: 'Turnirlar',
+      catTournamentsSub: "Turnir e'lonlari va natijalar",
+      catOffers: 'Aksiyalar',
+      catOffersSub: 'Chegirmalar va maxsus takliflar',
+      catSystem: 'Tizim',
+      catSystemSub: "Ilova yangiliklari va xavfsizlik bildirishnomalari",
+      viewInboxLabel: 'Barcha bildirishnomalarni ko‘rish',
+      viewInboxSub: 'Inbox — o‘qilgan va o‘qilmagan barcha xabarnomalar',
     },
     profile: {
       guestName: 'Mehmon',
@@ -2278,6 +2650,10 @@ export const translations: Record<Locale, Dict> = {
       loyaltyBtnSoon: 'Tez orada',
       hours: '{n} soat',
       soon: 'Soon',
+      soonSection: 'Tez orada',
+      soonSubtitle: "Yangi feature'lar tayyorlanmoqda",
+      soonExpandHint: 'Ochish uchun bosing',
+      soonCollapseHint: 'Yopish uchun bosing',
       menu: {
         ai: 'Nexora AI yordamchisi',
         aiTips: 'AI tavsiyalar',
@@ -2314,6 +2690,13 @@ export const translations: Record<Locale, Dict> = {
       durationHours: '{n} soat',
       emptyTitle: "Hali bronlar yo'q",
       emptySub: 'Yangi bron qiling va shu yerda kuzatib boring.',
+      cancelBtn: 'Bekor qilish',
+      cancelConfirmTitle: 'Bronni bekor qilasizmi?',
+      cancelConfirmMessage:
+        "Bron seans boshlanishidan kamida 1 soat oldin bekor qilinishi mumkin. Tasdiqlashdan keyin orqaga qaytarib bo'lmaydi.",
+      cancelConfirmBtn: 'Ha, bekor qilish',
+      cancelKeepBtn: 'Saqlab qolish',
+      cancelSuccess: 'Bron muvaffaqiyatli bekor qilindi',
     },
     zoneSwitch: {
       headerTitle: 'Zonani almashtirish',
@@ -2729,6 +3112,13 @@ export const translations: Record<Locale, Dict> = {
       joinBtn: 'Присоединиться',
       errorEmpty: 'Введите код клуба',
       successToast: 'Вы присоединились к клубу!',
+      passwordLabel: 'Пароль клуба',
+      passwordPlaceholder: 'Минимум {n} символов',
+      passwordHint: 'Этот пароль относится только к данному клубу — будет использоваться для будущих входов. Минимум {n} символов.',
+      errorPasswordTooShort: 'Пароль должен быть не короче {n} символов',
+      passwordShow: 'Показать пароль',
+      passwordHide: 'Скрыть пароль',
+      scannedFillPasswordHint: 'Код заполнен — теперь введите пароль',
     },
     clubPreviewScreen: {
       headerTitle: 'О клубе',
@@ -2754,6 +3144,14 @@ export const translations: Record<Locale, Dict> = {
       avatarUploadedToast: 'Аватар обновлён',
       avatarUploadFailed: 'Не удалось загрузить аватар, попробуйте ещё раз',
       galleryDenied: 'Доступ к галерее не разрешён',
+      avatarTooLarge: 'Фото слишком большое. Максимум 5 МБ',
+      avatarTooLargeWithSize: 'Фото слишком большое ({size} МБ). Максимум {max} МБ',
+      avatarBadDimensions: 'Неподходящий размер фото. Не меньше 64×64 и не больше 2000×2000 пикселей',
+      avatarTooSmallWithDims: 'Фото слишком маленькое. Нужно минимум {min}×{min} пикселей',
+      avatarTooBigDimsWithDims: 'Фото слишком большое по размеру. Максимум {max}×{max} пикселей',
+      avatarBadFormat: 'Этот формат не поддерживается. Загрузите JPG, PNG или WEBP (если HEIC, сконвертируйте в JPG)',
+      avatarNetworkError: 'Нет соединения с интернетом. Проверьте Wi-Fi или мобильную сеть',
+      avatarServerError: 'Ошибка на сервере. Попробуйте чуть позже',
     },
     writeReview: {
       headerTitle: 'Написать отзыв',
@@ -2769,6 +3167,15 @@ export const translations: Record<Locale, Dict> = {
       submitBtn: 'Отправить',
       successToast: 'Отзыв принят',
       errorMissing: 'Заполните рейтинг и текст отзыва',
+    },
+    myReviews: {
+      headerTitle: 'Мои отзывы',
+      countLabel: 'Вы оставили {n} отзывов',
+      emptyTitle: 'Отзывов пока нет',
+      emptySub: 'Поделитесь впечатлениями после посещения клуба — это поможет другим игрокам.',
+      technicalLabel: 'Техника',
+      peripheralsLabel: 'Аксессуары',
+      unknownClub: 'Клуб',
     },
     achievements: {
       headerTitle: 'Достижения',
@@ -2857,6 +3264,16 @@ export const translations: Record<Locale, Dict> = {
       statusOnline: 'Онлайн',
       statusInGame: 'В игре',
       statusOffline: 'Не в сети',
+      invitesTitle: 'Новые приглашения · {n}',
+      inviteAccept: 'Принять',
+      inviteDecline: 'Отклонить',
+      inviteAcceptedToast: 'Вы вступили в команду «{name}»',
+      inviteDeclinedToast: 'Приглашение отклонено',
+      unknownTeam: 'Команда',
+      inviteSlotsLabel: '{n} мест',
+      stubHint: 'Участник клуба',
+      gameSheetTitle: 'Выберите игру',
+      myTeamsTitle: 'Мои команды · {n}',
     },
     clubReviewsList: {
       headerTitle: 'Отзывы',
@@ -3098,6 +3515,17 @@ export const translations: Record<Locale, Dict> = {
       emptySub: 'Найдите других игроков на вкладке «Поиск» и добавляйте в друзья',
       sentToast: 'Заявка в друзья отправлена',
       removedToast: 'Удалено из друзей',
+      searchPromptTitle: 'Найдите пользователя',
+      searchPromptSub: 'Введите логин или имя и нажмите кнопку поиска',
+      outgoingTitle: 'Отправленные заявки · {n}',
+      cancelBtn: 'Отменить',
+      cancelledToast: 'Заявка отменена',
+      removeConfirmTitle: 'Удалить из друзей?',
+      removeConfirmMessage: 'Дружба с {name} будет прекращена.',
+      removeConfirmYes: 'Удалить',
+      removeConfirmNo: 'Отмена',
+      alreadyFriendsBadge: 'Друг',
+      blockedBadge: 'Заблокирован',
     },
     friendRequests: {
       headerTitle: 'Заявки',
@@ -3121,6 +3549,15 @@ export const translations: Record<Locale, Dict> = {
       emptyTitle: 'Нет избранных клубов',
       emptySub: 'Нажмите ❤ на странице клуба — он появится здесь.',
       discoverBtn: 'Найти клубы',
+      countLabel: '{n} сохранено',
+      removedToast: '{name} удалён из избранного',
+      clearAllAction: 'Очистить',
+      clearAllTitle: 'Очистить всё?',
+      clearAllMessage: 'Из избранного будут удалены {n} клубов. Действие необратимо.',
+      clearAllConfirm: 'Очистить',
+      clearAllCancel: 'Отмена',
+      clearedToast: 'Избранное очищено',
+      fallbackName: 'Клуб',
     },
     aiAssistant: {
       name: 'Nexora AI',
@@ -3151,11 +3588,14 @@ export const translations: Record<Locale, Dict> = {
       actionSubmitSub: 'Отправьте свой запрос',
       actionRemote: 'Удалённая помощь',
       actionRemoteSub: 'Получить удалённую помощь',
-      popularTopics: 'Популярные темы',
+      popularTopics: 'Часто задаваемые вопросы',
       topic1: 'Изменить / отменить бронь',
       topic2: 'Оплата и возврат',
       topic3: 'Баллы и программа лояльности',
       viewAll: 'Все',
+      topicsEmpty: 'Вопросов и ответов пока нет.',
+      topicsLoading: 'Загрузка...',
+      stillNeedHelp: 'Не нашли ответ? Свяжитесь с нами через каналы ниже.',
       ticketSubtitle: 'Опишите проблему подробнее',
       ticketSubject: 'Тема',
       ticketSubjectPlaceholder: 'Например: Проблема с оплатой',
@@ -3178,6 +3618,23 @@ export const translations: Record<Locale, Dict> = {
       emptyChat: 'Пока нет сообщений. Напишите первым.',
       membersSoon: 'Панель участников скоро\nЗдесь будут участники команды, роли и ELO',
       settingsSoon: 'Настройки команды скоро\nЗдесь будут имя, лого, правила и разрешения',
+      you: 'вы',
+      roleOwner: 'Капитан',
+      roleInvited: 'Приглашён',
+      membersEmpty: 'Участники не найдены',
+      menuA11y: 'Действия с командой',
+      leaveAction: 'Выйти из команды',
+      disbandAction: 'Распустить команду',
+      leaveConfirmTitle: 'Выйти из команды?',
+      leaveConfirmMessage: 'Вы больше не сможете писать в этом чате и не будете получать сообщения.',
+      leaveConfirmYes: 'Выйти',
+      leaveConfirmNo: 'Отмена',
+      leftToast: 'Вы вышли из команды',
+      disbandConfirmTitle: 'Распустить команду?',
+      disbandConfirmMessage: 'Это действие необратимо. Все участники и сообщения будут удалены.',
+      disbandConfirmYes: 'Распустить',
+      disbandConfirmNo: 'Отмена',
+      disbandedToast: 'Команда распущена',
     },
     partyBooking: {
       headerTitle: 'Игра с друзьями',
@@ -3324,6 +3781,7 @@ export const translations: Record<Locale, Dict> = {
       cameraDenied: 'Доступ к камере не разрешён. Откройте настройки.',
       galleryDenied: 'Доступ к галерее не разрешён',
       galleryDecodeFailed: 'QR-код не найден на фото',
+      galleryPickFailed: 'Не удалось открыть фото. Выберите другое',
       alignHint: 'Поместите QR в квадрат',
       viewfinderTitle: 'Откройте камеру',
       viewfinderSub: 'Наведите камеру на стикер — код считается автоматически',
@@ -3363,6 +3821,49 @@ export const translations: Record<Locale, Dict> = {
       tabChat: 'Чат',
       tabSettings: 'Настройки',
       open: 'Открыто',
+      awaitingTitle: 'Ожидаем подтверждения',
+      awaitingSub:
+        'Ваш компьютер пока не найден. Обратитесь к оператору или отсканируйте QR-код заново.',
+      pendingTitle: 'Бронь подтверждена',
+      pendingSub:
+        'Сессия ещё не запущена. Подойдите к компьютеру и дождитесь, пока оператор откроет её.',
+    },
+    transactionHistory: {
+      headerTitle: 'История транзакций',
+      filterAll: 'Все',
+      filterTopups: 'Пополнения',
+      filterBonuses: 'Бонусы',
+      filterCharges: 'Списания',
+      emptyTitle: 'Транзакций пока нет',
+      emptySub:
+        'После пополнения баланса все операции будут отображаться здесь.',
+      typeTopup: 'Пополнение баланса',
+      typeBonus: 'Кэшбэк',
+      typePackage: 'Покупка пакета',
+      typeSubscription: 'Подписка',
+      typeTierBonus: 'Бонус за ранг',
+      typeMissionBonus: 'Награда за миссию',
+      typeCharge: 'Списание',
+      typeRefund: 'Возврат',
+      typeOther: 'Другое',
+      topupCta: 'Пополнить баланс',
+    },
+    notificationSettings: {
+      headerTitle: 'Настройки уведомлений',
+      soonBannerTitle: 'Push-уведомления — скоро',
+      soonBannerSub:
+        'Настройки сохраняются локально. Как только включим push, ваши предпочтения применятся автоматически.',
+      categoriesSection: 'Категории',
+      catBookings: 'Бронирования',
+      catBookingsSub: 'Подтверждения брони и напоминания',
+      catTournaments: 'Турниры',
+      catTournamentsSub: 'Анонсы турниров и результаты',
+      catOffers: 'Акции',
+      catOffersSub: 'Скидки и спецпредложения',
+      catSystem: 'Система',
+      catSystemSub: 'Обновления приложения и важные уведомления',
+      viewInboxLabel: 'Открыть список уведомлений',
+      viewInboxSub: 'Inbox — прочитанные и непрочитанные сообщения',
     },
     profile: {
       guestName: 'Гость',
@@ -3383,6 +3884,10 @@ export const translations: Record<Locale, Dict> = {
       loyaltyBtnSoon: 'Скоро',
       hours: '{n} ч',
       soon: 'Скоро',
+      soonSection: 'Скоро',
+      soonSubtitle: 'Новые функции в разработке',
+      soonExpandHint: 'Нажмите, чтобы открыть',
+      soonCollapseHint: 'Нажмите, чтобы свернуть',
       menu: {
         ai: 'Nexora AI ассистент',
         aiTips: 'AI-рекомендации',
@@ -3419,6 +3924,13 @@ export const translations: Record<Locale, Dict> = {
       durationHours: '{n} ч',
       emptyTitle: 'Пока нет броней',
       emptySub: 'Создайте бронь и следите за ней здесь.',
+      cancelBtn: 'Отменить',
+      cancelConfirmTitle: 'Отменить бронь?',
+      cancelConfirmMessage:
+        'Бронь можно отменить не позднее, чем за 1 час до начала сеанса. После подтверждения отмена необратима.',
+      cancelConfirmBtn: 'Да, отменить',
+      cancelKeepBtn: 'Сохранить',
+      cancelSuccess: 'Бронь успешно отменена',
     },
     zoneSwitch: {
       headerTitle: 'Сменить зону',
@@ -3834,6 +4346,13 @@ export const translations: Record<Locale, Dict> = {
       joinBtn: 'Join',
       errorEmpty: 'Enter a club code',
       successToast: 'You joined the club!',
+      passwordLabel: 'Club password',
+      passwordPlaceholder: 'At least {n} characters',
+      passwordHint: "This password is specific to this club — you'll use it for future logins. Minimum {n} characters.",
+      errorPasswordTooShort: 'Password must be at least {n} characters',
+      passwordShow: 'Show password',
+      passwordHide: 'Hide password',
+      scannedFillPasswordHint: 'Code filled — now enter your password',
     },
     clubPreviewScreen: {
       headerTitle: 'About the club',
@@ -3859,6 +4378,14 @@ export const translations: Record<Locale, Dict> = {
       avatarUploadedToast: 'Avatar updated',
       avatarUploadFailed: "Couldn't upload the avatar, try again",
       galleryDenied: 'Gallery access denied',
+      avatarTooLarge: 'Image is too large. Max 5 MB',
+      avatarTooLargeWithSize: 'Image is too large ({size} MB). Max {max} MB',
+      avatarBadDimensions: 'Image dimensions are off. Pick something between 64×64 and 2000×2000 pixels',
+      avatarTooSmallWithDims: 'Image is too small. Need at least {min}×{min} pixels',
+      avatarTooBigDimsWithDims: 'Image dimensions are too large. Max {max}×{max} pixels',
+      avatarBadFormat: 'This format is not supported. Upload JPG, PNG, or WEBP (if HEIC, convert to JPG first)',
+      avatarNetworkError: 'No internet connection. Check your Wi-Fi or mobile data',
+      avatarServerError: 'Server error. Please try again in a moment',
     },
     writeReview: {
       headerTitle: 'Write a review',
@@ -3874,6 +4401,15 @@ export const translations: Record<Locale, Dict> = {
       submitBtn: 'Submit',
       successToast: 'Review submitted',
       errorMissing: 'Rating and review text are required',
+    },
+    myReviews: {
+      headerTitle: 'My reviews',
+      countLabel: "You've left {n} reviews",
+      emptyTitle: 'No reviews yet',
+      emptySub: 'Share your impressions after visiting a club — it helps other players.',
+      technicalLabel: 'Tech',
+      peripheralsLabel: 'Peripherals',
+      unknownClub: 'Club',
     },
     achievements: {
       headerTitle: 'Achievements',
@@ -3962,6 +4498,16 @@ export const translations: Record<Locale, Dict> = {
       statusOnline: 'Online',
       statusInGame: 'In game',
       statusOffline: 'Offline',
+      invitesTitle: 'New invites · {n}',
+      inviteAccept: 'Accept',
+      inviteDecline: 'Decline',
+      inviteAcceptedToast: 'You joined team "{name}"',
+      inviteDeclinedToast: 'Invite declined',
+      unknownTeam: 'Team',
+      inviteSlotsLabel: '{n} slots',
+      stubHint: 'Club member',
+      gameSheetTitle: 'Choose game',
+      myTeamsTitle: 'My teams · {n}',
     },
     clubReviewsList: {
       headerTitle: 'Reviews',
@@ -4203,6 +4749,17 @@ export const translations: Record<Locale, Dict> = {
       emptySub: 'Find other players in the "Search" tab and add them as friends',
       sentToast: 'Friend request sent',
       removedToast: 'Removed from friends',
+      searchPromptTitle: 'Find a user',
+      searchPromptSub: 'Type a login or name and press the search button',
+      outgoingTitle: 'Sent requests · {n}',
+      cancelBtn: 'Cancel',
+      cancelledToast: 'Request cancelled',
+      removeConfirmTitle: 'Remove from friends?',
+      removeConfirmMessage: 'Your friendship with {name} will end.',
+      removeConfirmYes: 'Remove',
+      removeConfirmNo: 'Cancel',
+      alreadyFriendsBadge: 'Friend',
+      blockedBadge: 'Blocked',
     },
     friendRequests: {
       headerTitle: 'Requests',
@@ -4226,6 +4783,15 @@ export const translations: Record<Locale, Dict> = {
       emptyTitle: 'No favourite clubs yet',
       emptySub: 'Tap the heart on a club page — it will show up here.',
       discoverBtn: 'Find clubs',
+      countLabel: '{n} saved',
+      removedToast: '{name} removed from favourites',
+      clearAllAction: 'Clear',
+      clearAllTitle: 'Clear all favourites?',
+      clearAllMessage: '{n} clubs will be removed from your favourites. This cannot be undone.',
+      clearAllConfirm: 'Clear all',
+      clearAllCancel: 'Cancel',
+      clearedToast: 'Favourites cleared',
+      fallbackName: 'Club',
     },
     aiAssistant: {
       name: 'Nexora AI',
@@ -4256,11 +4822,14 @@ export const translations: Record<Locale, Dict> = {
       actionSubmitSub: 'Send your request',
       actionRemote: 'Remote help',
       actionRemoteSub: 'Get remote assistance',
-      popularTopics: 'Popular topics',
+      popularTopics: 'Frequently asked questions',
       topic1: 'Change / cancel booking',
       topic2: 'Payments & refunds',
       topic3: 'Points & loyalty program',
       viewAll: 'View all',
+      topicsEmpty: 'No questions and answers yet.',
+      topicsLoading: 'Loading...',
+      stillNeedHelp: "Couldn't find what you needed? Reach us through the channels below.",
       ticketSubtitle: 'Describe your issue in detail',
       ticketSubject: 'Subject',
       ticketSubjectPlaceholder: 'e.g. Payment issue',
@@ -4283,6 +4852,23 @@ export const translations: Record<Locale, Dict> = {
       emptyChat: 'No messages yet. Be the first to send one.',
       membersSoon: 'Members panel coming soon\nTeam roster, roles, and ELO will live here',
       settingsSoon: 'Team settings coming soon\nName, logo, rules, and permissions live here',
+      you: 'you',
+      roleOwner: 'Captain',
+      roleInvited: 'Invited',
+      membersEmpty: 'No members found',
+      menuA11y: 'Team actions',
+      leaveAction: 'Leave team',
+      disbandAction: 'Disband team',
+      leaveConfirmTitle: 'Leave the team?',
+      leaveConfirmMessage: "You won't be able to chat here or receive messages anymore.",
+      leaveConfirmYes: 'Leave',
+      leaveConfirmNo: 'Cancel',
+      leftToast: 'You left the team',
+      disbandConfirmTitle: 'Disband the team?',
+      disbandConfirmMessage: 'This cannot be undone. All members and messages will be removed.',
+      disbandConfirmYes: 'Disband',
+      disbandConfirmNo: 'Cancel',
+      disbandedToast: 'Team disbanded',
     },
     partyBooking: {
       headerTitle: 'Play together',
@@ -4429,6 +5015,7 @@ export const translations: Record<Locale, Dict> = {
       cameraDenied: 'Camera access denied. Enable it in Settings.',
       galleryDenied: 'Gallery access denied',
       galleryDecodeFailed: 'No QR code found in the image',
+      galleryPickFailed: "Couldn't open the photo. Pick another one",
       alignHint: 'Align the QR inside the box',
       viewfinderTitle: 'Open the camera',
       viewfinderSub: 'Point your camera at the sticker — the code is read automatically',
@@ -4468,6 +5055,49 @@ export const translations: Record<Locale, Dict> = {
       tabChat: 'Chat',
       tabSettings: 'Settings',
       open: 'Open',
+      awaitingTitle: 'Awaiting confirmation',
+      awaitingSub:
+        "We couldn't find your PC yet. Please check with the operator or scan the QR code again.",
+      pendingTitle: 'Booking confirmed',
+      pendingSub:
+        "Your session hasn't started yet. Head to your PC and wait for the operator to open it.",
+    },
+    transactionHistory: {
+      headerTitle: 'Transaction history',
+      filterAll: 'All',
+      filterTopups: 'Top-ups',
+      filterBonuses: 'Bonuses',
+      filterCharges: 'Charges',
+      emptyTitle: 'No transactions yet',
+      emptySub:
+        'Once you top up your balance, every wallet operation will show up here.',
+      typeTopup: 'Wallet top-up',
+      typeBonus: 'Cashback',
+      typePackage: 'Package purchase',
+      typeSubscription: 'Subscription',
+      typeTierBonus: 'Rank bonus',
+      typeMissionBonus: 'Mission reward',
+      typeCharge: 'Charge',
+      typeRefund: 'Refund',
+      typeOther: 'Other',
+      topupCta: 'Top up balance',
+    },
+    notificationSettings: {
+      headerTitle: 'Notification settings',
+      soonBannerTitle: 'Push notifications — coming soon',
+      soonBannerSub:
+        "Preferences are saved locally for now. They'll apply automatically once push delivery is enabled.",
+      categoriesSection: 'Categories',
+      catBookings: 'Bookings',
+      catBookingsSub: 'Reservation confirmations and reminders',
+      catTournaments: 'Tournaments',
+      catTournamentsSub: 'Tournament announcements and results',
+      catOffers: 'Offers',
+      catOffersSub: 'Discounts and special offers',
+      catSystem: 'System',
+      catSystemSub: 'App updates and important notices',
+      viewInboxLabel: 'Open notifications inbox',
+      viewInboxSub: 'Inbox — read and unread messages',
     },
     profile: {
       guestName: 'Guest',
@@ -4488,6 +5118,10 @@ export const translations: Record<Locale, Dict> = {
       loyaltyBtnSoon: 'Coming soon',
       hours: '{n} h',
       soon: 'Soon',
+      soonSection: 'Coming soon',
+      soonSubtitle: 'New features in the works',
+      soonExpandHint: 'Tap to expand',
+      soonCollapseHint: 'Tap to collapse',
       menu: {
         ai: 'Nexora AI assistant',
         aiTips: 'AI recommendations',
@@ -4524,6 +5158,13 @@ export const translations: Record<Locale, Dict> = {
       durationHours: '{n} h',
       emptyTitle: 'No bookings yet',
       emptySub: 'Make a booking and track it here.',
+      cancelBtn: 'Cancel',
+      cancelConfirmTitle: 'Cancel this booking?',
+      cancelConfirmMessage:
+        'Bookings can be cancelled at least 1 hour before the session start. This action cannot be undone.',
+      cancelConfirmBtn: 'Yes, cancel',
+      cancelKeepBtn: 'Keep it',
+      cancelSuccess: 'Booking cancelled successfully',
     },
     zoneSwitch: {
       headerTitle: 'Switch zone',

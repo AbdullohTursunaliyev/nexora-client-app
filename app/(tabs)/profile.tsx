@@ -6,10 +6,16 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useFocusEffect, type Href } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
+import { ChevronDown } from 'lucide-react-native';
 import { Colors } from '../../constants/Colors';
 import { Fonts } from '../../constants/Fonts';
 import { useAuth } from '../../store/AuthProvider';
@@ -46,6 +52,21 @@ import BellIcon from '../../components/icons/BellIcon';
 
 type IconCmp = React.ComponentType<{ size?: number; color?: string }>;
 
+// LayoutAnimation requires explicit opt-in on Android (no-op on iOS
+// where it's enabled by default). Without this the "Tez orada"
+// section expand/collapse would snap-cut on Android instead of
+// smoothly animating its height. Guard so we only call once per
+// module load.
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+// AsyncStorage key for the "Tez orada" section's collapsed state.
+// Default = collapsed; only flipped to expanded when the user taps
+// to open. Persisted across launches so a power user who collapsed
+// it doesn't have to re-collapse on every cold start.
+const SOON_COLLAPSED_KEY = 'nexora.profile.soonCollapsed';
+
 function formatSum(value: number): string {
   if (!Number.isFinite(value)) return '0';
   return value.toLocaleString('ru-RU').replace(/,/g, ' ');
@@ -70,6 +91,49 @@ export default function ProfileScreen() {
   // in lock-step.
   const unreadCount = useUnreadCount();
   const [refreshing, setRefreshing] = useState(false);
+
+  // "Tez orada" section collapse state. Default = collapsed so the
+  // common case (returning user who already knows what's coming)
+  // sees a clean menu. AsyncStorage persists the user's choice so
+  // a power user who expanded once doesn't have to re-expand each
+  // time they open the tab.
+  const [soonCollapsed, setSoonCollapsed] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    AsyncStorage.getItem(SOON_COLLAPSED_KEY)
+      .then((stored) => {
+        if (cancelled) return;
+        // Only flip to expanded when the user has EXPLICITLY stored
+        // 'false'. Missing key (first launch) or any other value
+        // keeps the default collapsed state — never accidentally
+        // open the section just because storage returned junk.
+        if (stored === 'false') setSoonCollapsed(false);
+      })
+      .catch(() => {
+        // AsyncStorage failures are non-fatal — the section just
+        // stays collapsed, user can tap to expand.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleSoonCollapsed = useCallback(() => {
+    // LayoutAnimation runs the height transition for us — no
+    // Animated.Value wiring needed. easeInEaseOut is the iOS Settings
+    // accordion default.
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    setSoonCollapsed((prev) => {
+      const next = !prev;
+      // Fire-and-forget persistence — the UI updates synchronously,
+      // we don't need to await storage.
+      AsyncStorage.setItem(SOON_COLLAPSED_KEY, String(next)).catch(() => {});
+      return next;
+    });
+  }, []);
 
   const loadSummary = useCallback(async () => {
     if (!currentTenantId) {
@@ -192,44 +256,135 @@ export default function ProfileScreen() {
     [t]
   );
 
-  const MENU: {
+  type MenuItem = {
     id: string;
     label: string;
     Icon: IconCmp;
     iconColor: string;
     route?: Href;
     soon?: boolean;
-  }[] = [
-    // `soon: true` flags entries whose destination screen is gated
-    // behind `<ComingSoonView />`. The menu still navigates to the
-    // route (so deep-links and back-stack work), but the user sees
-    // the placeholder + "Soon" badge here makes it obvious that the
-    // feature is still being built. When BE wiring lands, drop the
-    // flag from the matching row and the live screen takes over.
-    { id: 'ai', label: t.profile.menu.ai, Icon: RobotIcon, iconColor: '#00CFFF', route: '/ai-assistant', soon: true },
-    { id: 'aiTips', label: t.profile.menu.aiTips, Icon: SparklesIcon, iconColor: '#A78BFA', route: '/smart-recommendations', soon: true },
-    // Rewards center + store removed from the menu — the backend has
-    // no /rewards/* routes yet (per project_rewards_soon.md). Add the
-    // entries back here once the BE ships and the screens swap their
-    // hardcoded fixture data for live API responses.
-    { id: 'refer', label: t.profile.menu.referEarn, Icon: GiftIcon, iconColor: '#22C55E', route: '/refer-earn', soon: true },
-    { id: 'stats', label: t.profile.menu.stats, Icon: ChartIcon, iconColor: '#3B82F6', route: '/statistics', soon: true },
+  };
+
+  // Live / actionable rows — anything the user can actually open
+  // today. Ordered so daily-use items (favorites, friends, clubs)
+  // sit near the top and chore-style rows (help, settings) anchor
+  // the bottom. Settings is INTENTIONALLY last in this group so the
+  // "Tez orada" block below it reads as the natural continuation.
+  const MENU_ACTIVE: MenuItem[] = [
     { id: 'favorites', label: t.profile.menu.favorites, Icon: HeartIcon, iconColor: '#EF4444', route: '/favorites' },
-    { id: 'teams', label: t.profile.menu.teams, Icon: UsersIcon, iconColor: '#8B5CF6', route: '/team-finder' },
     { id: 'friends', label: t.profile.menu.friends, Icon: UsersIcon, iconColor: '#00CFFF', route: '/friends-list' },
     { id: 'friendRequests', label: t.profile.menu.friendRequests, Icon: MailIcon, iconColor: '#F59E0B', route: '/friend-requests' },
-    { id: 'sessionInvites', label: t.profile.menu.sessionInvites, Icon: GamepadIcon, iconColor: '#FF34E0', route: '/session-invites', soon: true },
+    // Teams moved to MENU_SOON — the feature is functionally ready
+    // (BE endpoints + FE screens shipped) but the post-create
+    // in-chat invite flow + voice integration + presence aren't,
+    // so we're holding the menu surface back until the
+    // post-create UX polish lands. Restore here when those ship.
     { id: 'myClubs', label: t.profile.menu.myClubs, Icon: HomeIcon, iconColor: '#22C55E', route: '/clubs-switch' },
     { id: 'joinClub', label: t.profile.menu.joinClub, Icon: PlusIcon, iconColor: '#00CFFF', route: '/club-join' },
-    { id: 'reviews', label: t.profile.menu.reviews, Icon: StarIcon, iconColor: '#F59E0B', route: '/club-reviews-list' },
-    { id: 'smartSeat', label: t.profile.menu.smartSeat, Icon: BrainIcon, iconColor: '#A78BFA', route: '/smart-seat', soon: true },
-    { id: 'smartQueue', label: t.profile.menu.smartQueue, Icon: HourglassIcon, iconColor: '#0EA5E9', route: '/smart-queue', soon: true },
-    { id: 'party', label: t.profile.menu.partyBooking, Icon: PartyIcon, iconColor: '#FF34E0', route: '/party-booking', soon: true },
-    { id: 'rating', label: t.profile.menu.rating, Icon: TrophyIcon, iconColor: '#F59E0B', route: '/rating', soon: true },
+    // Reviews link now routes to the dedicated cross-tenant
+    // "my reviews" screen instead of /club-reviews-list (which
+    // showed the current tenant's feed — strangers' reviews of
+    // the user's active club). Users expected "Sharhlar" to mean
+    // "MY writeups", which is what /my-reviews delivers.
+    { id: 'reviews', label: t.profile.menu.reviews, Icon: StarIcon, iconColor: '#F59E0B', route: '/my-reviews' },
     { id: 'qr', label: t.profile.menu.qrScan, Icon: QrIcon, iconColor: '#00CFFF', route: '/qr-scan' },
     { id: 'help', label: t.profile.menu.help, Icon: MessageCircleIcon, iconColor: '#22C55E', route: '/help-support' },
     { id: 'settings', label: t.profile.menu.settings, Icon: SettingsIcon, iconColor: '#8B95A8', route: '/settings' },
   ];
+
+  // Soon rows — features whose backend isn't wired yet. Moved to a
+  // dedicated section BELOW Settings (per product feedback): users
+  // were skimming past live entries to reach what looked like
+  // important items only to discover they're disabled. Grouping
+  // every "Tez orada" row under one labelled block sets the
+  // expectation explicitly: "everything below here is coming, not
+  // tappable yet."
+  //
+  // Rendering: the row visuals stay the same (dimmed icon + label,
+  // "Soon" badge instead of the chevron, non-tappable wrapper). Only
+  // the placement changed.
+  //
+  // When a feature ships: move the row from MENU_SOON → MENU_ACTIVE
+  // and drop the `soon` flag.
+  const MENU_SOON: MenuItem[] = [
+    // Teams — feature works end-to-end (BE + FE shipped), but the
+    // post-create flow has rough edges (no in-chat invite, empty
+    // chat CTA needs polish, voice/presence aren't wired). Soft-
+    // gating the menu surface until that polish lands so we don't
+    // expose a half-baked path to every user opening Profile.
+    { id: 'teams', label: t.profile.menu.teams, Icon: UsersIcon, iconColor: '#8B5CF6', route: '/team-finder', soon: true },
+    { id: 'ai', label: t.profile.menu.ai, Icon: RobotIcon, iconColor: '#00CFFF', route: '/ai-assistant', soon: true },
+    { id: 'aiTips', label: t.profile.menu.aiTips, Icon: SparklesIcon, iconColor: '#A78BFA', route: '/smart-recommendations', soon: true },
+    { id: 'smartSeat', label: t.profile.menu.smartSeat, Icon: BrainIcon, iconColor: '#A78BFA', route: '/smart-seat', soon: true },
+    { id: 'smartQueue', label: t.profile.menu.smartQueue, Icon: HourglassIcon, iconColor: '#0EA5E9', route: '/smart-queue', soon: true },
+    { id: 'party', label: t.profile.menu.partyBooking, Icon: PartyIcon, iconColor: '#FF34E0', route: '/party-booking', soon: true },
+    { id: 'sessionInvites', label: t.profile.menu.sessionInvites, Icon: GamepadIcon, iconColor: '#FF34E0', route: '/session-invites', soon: true },
+    { id: 'rating', label: t.profile.menu.rating, Icon: TrophyIcon, iconColor: '#F59E0B', route: '/rating', soon: true },
+    { id: 'stats', label: t.profile.menu.stats, Icon: ChartIcon, iconColor: '#3B82F6', route: '/statistics', soon: true },
+    { id: 'refer', label: t.profile.menu.referEarn, Icon: GiftIcon, iconColor: '#22C55E', route: '/refer-earn', soon: true },
+  ];
+
+  const renderMenuRow = (item: MenuItem, isLast: boolean) => {
+    // `soon` items render as DIMMED non-tappable rows with the
+    // "Soon" badge and no chevron — the user reads them as "this
+    // is coming, you can't open it yet". Live items keep the
+    // chevron + Touchable wrapper.
+    const content = (
+      <>
+        <View style={styles.menuLeft}>
+          <View
+            style={[
+              styles.menuIcon,
+              {
+                backgroundColor: `${item.iconColor}1F`,
+                opacity: item.soon ? 0.5 : 1,
+              },
+            ]}
+          >
+            <item.Icon size={15} color={item.iconColor} />
+          </View>
+          <Text style={[styles.menuLabel, item.soon && styles.menuLabelDisabled]}>
+            {item.label}
+          </Text>
+        </View>
+        <View style={styles.menuRight}>
+          {item.soon ? (
+            <View style={styles.soonBadge}>
+              <Text style={styles.soonText}>{t.profile.soon}</Text>
+            </View>
+          ) : (
+            <ChevronRightIcon size={16} color="#8B95A8" />
+          )}
+        </View>
+      </>
+    );
+
+    if (item.soon) {
+      return (
+        <View
+          key={item.id}
+          style={[styles.menuItem, isLast && styles.menuItemLast]}
+          accessibilityRole="summary"
+          accessibilityLabel={`${item.label}, ${t.profile.soon}`}
+        >
+          {content}
+        </View>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        key={item.id}
+        style={[styles.menuItem, isLast && styles.menuItemLast]}
+        activeOpacity={0.7}
+        onPress={() => item.route && router.push(item.route)}
+        accessibilityRole="button"
+        accessibilityLabel={item.label}
+      >
+        {content}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -426,77 +581,79 @@ export default function ProfileScreen() {
           </LinearGradient>
         </View>
 
+        {/* Live menu group — daily-use actions + housekeeping rows
+            (favorites, friends, clubs, qr, help, settings). Settings
+            is the LAST row so the "Tez orada" header below reads as
+            the natural section break. */}
         <View style={styles.menuList}>
-          {MENU.map((item, idx) => {
-            const isLast = idx === MENU.length - 1;
-            // `soon` items render as DIMMED non-tappable rows with the
-            // "Soon" badge and no chevron — the user reads them as
-            // "this is coming, you can't open it yet". Pre-fix the
-            // soon rows were tappable and led to a placeholder screen
-            // inside; the user couldn't tell at a glance that it
-            // wasn't a working feature. Per product feedback we now
-            // stop the navigation at the menu row.
-            const content = (
-              <>
-                <View style={styles.menuLeft}>
-                  <View
-                    style={[
-                      styles.menuIcon,
-                      {
-                        backgroundColor: `${item.iconColor}1F`,
-                        opacity: item.soon ? 0.5 : 1,
-                      },
-                    ]}
-                  >
-                    <item.Icon size={15} color={item.iconColor} />
-                  </View>
-                  <Text
-                    style={[styles.menuLabel, item.soon && styles.menuLabelDisabled]}
-                  >
-                    {item.label}
-                  </Text>
-                </View>
-                <View style={styles.menuRight}>
-                  {item.soon ? (
-                    <View style={styles.soonBadge}>
-                      <Text style={styles.soonText}>{t.profile.soon}</Text>
-                    </View>
-                  ) : (
-                    <ChevronRightIcon size={16} color="#8B95A8" />
-                  )}
-                </View>
-              </>
-            );
-
-            // Non-tappable static row for soon items so the user
-            // can't accidentally navigate into the placeholder.
-            if (item.soon) {
-              return (
-                <View
-                  key={item.id}
-                  style={[styles.menuItem, isLast && styles.menuItemLast]}
-                  accessibilityRole="summary"
-                  accessibilityLabel={`${item.label}, ${t.profile.soon}`}
-                >
-                  {content}
-                </View>
-              );
-            }
-
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.menuItem, isLast && styles.menuItemLast]}
-                activeOpacity={0.7}
-                onPress={() => item.route && router.push(item.route)}
-                accessibilityRole="button"
-                accessibilityLabel={item.label}
-              >
-                {content}
-              </TouchableOpacity>
-            );
-          })}
+          {MENU_ACTIVE.map((item, idx) =>
+            renderMenuRow(item, idx === MENU_ACTIVE.length - 1),
+          )}
         </View>
+
+        {/* "Tez orada" collapsible group — pulled below Settings
+            so live rows aren't interleaved with disabled ones.
+            Default collapsed (visual cleanup for returning users);
+            tap header to expand. Count badge tells the user how
+            many items are inside before they commit to the expand
+            tap. State persists across launches via AsyncStorage. */}
+        {MENU_SOON.length > 0 && (
+          <>
+            {/* Card-style header — richer visual than the v1 plain
+                uppercase divider. Hourglass icon in a tinted wrapper
+                (matches the menu-row icon idiom), title + subtitle
+                stack, count pill, and a rotating chevron. When
+                expanded the bottom corners go square so the header
+                visually fuses with the menu list below it, mirroring
+                the iOS Settings disclosure-card pattern. */}
+            <TouchableOpacity
+              style={[
+                styles.soonHeader,
+                !soonCollapsed && styles.soonHeaderExpanded,
+              ]}
+              activeOpacity={0.85}
+              onPress={toggleSoonCollapsed}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: !soonCollapsed }}
+              accessibilityLabel={`${t.profile.soonSection}, ${MENU_SOON.length}`}
+              accessibilityHint={
+                soonCollapsed ? t.profile.soonExpandHint : t.profile.soonCollapseHint
+              }
+            >
+              <View style={styles.soonIconWrap}>
+                <HourglassIcon size={16} color="#00CFFF" />
+              </View>
+              <View style={styles.soonHeaderText}>
+                <Text style={styles.soonHeaderTitle}>
+                  {t.profile.soonSection}
+                </Text>
+                <Text style={styles.soonHeaderSub}>
+                  {t.profile.soonSubtitle}
+                </Text>
+              </View>
+              <View style={styles.soonCountBadge}>
+                <Text style={styles.soonCountText}>{MENU_SOON.length}</Text>
+              </View>
+              {/* Chevron rotation — same icon, flipped 180° when
+                  expanded. Aligns with the iOS Settings disclosure
+                  animation. */}
+              <ChevronDown
+                size={18}
+                color="#8B95A8"
+                style={{
+                  transform: [{ rotate: soonCollapsed ? '0deg' : '180deg' }],
+                }}
+              />
+            </TouchableOpacity>
+            {!soonCollapsed && (
+              <View style={[styles.menuList, styles.menuListAttached]}>
+                {MENU_SOON.map((item, idx) =>
+                  renderMenuRow(item, idx === MENU_SOON.length - 1),
+                )}
+              </View>
+            )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -771,6 +928,88 @@ const styles = StyleSheet.create({
     backgroundColor: '#141823',
     borderRadius: 14,
     overflow: 'hidden',
+  },
+  // When the menu list follows the expanded "Tez orada" header, the
+  // header's bottom corners are squared off. We override the top
+  // corners of THIS list to match — together they read as a single
+  // card. marginTop:0 closes the gap entirely.
+  menuListAttached: {
+    marginTop: 0,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+  },
+  // Card-style header — richer visual than the v1 uppercase divider.
+  // Same dark card background as the menu list, subtle cyan-tinted
+  // border to hint at the "upcoming features" theme. paddingY 12 +
+  // icon 36pt ≈ 60pt effective tap target (well above iOS HIG).
+  soonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#141823',
+    borderRadius: 14,
+    padding: 12,
+    gap: 12,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.16)',
+  },
+  // Expanded state — bottom corners squared off so the header fuses
+  // visually with the menu list below (iOS Settings disclosure-card
+  // pattern). Without this the expanded list would float below the
+  // header with a visible gap.
+  soonHeaderExpanded: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderBottomWidth: 0,
+  },
+  // Hourglass icon wrapper — same idiom as the menu-row icons so
+  // the visual rhythm of the page stays consistent. Tinted cyan
+  // because the section's theme is "feature pipeline".
+  soonIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 207, 255, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  soonHeaderText: {
+    flex: 1,
+    gap: 2,
+  },
+  // Title — same family as menu row labels so the header reads as
+  // "another row" rather than competing for attention.
+  soonHeaderTitle: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    color: Colors.text,
+  },
+  soonHeaderSub: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 11.5,
+    color: '#8B95A8',
+  },
+  // Count pill — tells the user how many items are inside BEFORE
+  // they commit to expanding. Cyan accent matches the rest of the
+  // "Soon" badges so the visual family is consistent.
+  soonCountBadge: {
+    minWidth: 24,
+    height: 22,
+    paddingHorizontal: 8,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0, 207, 255, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 207, 255, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  soonCountText: {
+    fontFamily: Fonts.inter.bold,
+    fontSize: 11,
+    color: '#00CFFF',
+    lineHeight: 13,
   },
   menuItem: {
     flexDirection: 'row',

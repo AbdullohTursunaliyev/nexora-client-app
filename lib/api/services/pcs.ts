@@ -168,6 +168,40 @@ interface OpenByQrBody {
 }
 
 /**
+ * Find the PC that belongs to the current user from a `/mobile/pcs`
+ * response. Used by /active-session and /services so both screens
+ * agree on "which PC is yours" without duplicating the ownership
+ * logic.
+ *
+ * Why this exists: the BE catalog returns `'busy'` for a PC with any
+ * active Session in the tenant, not just the caller's. Filtering by
+ * `status === 'busy'` alone surfaces a stranger's PC the moment a
+ * second user starts a session. The only reliable ownership signal
+ * the catalog exposes is `booking.is_mine` (or `booking.client_id`)
+ * — PcBooking rows persist alongside the Session for the duration
+ * of the reservation window, so they're available for both
+ * `'booked'` (pre-session) and `'busy'` (during-session) states.
+ *
+ * Returns `null` when no candidate matches — callers should render
+ * the "awaiting confirmation" empty state instead of silently
+ * pretending some other PC is the user's.
+ */
+export function findMyPc(list: Pc[], myClientId?: number | null): Pc | null {
+  // Primary: trust the BE-computed is_mine flag.
+  const mineByFlag = list.find((p) => p.booking?.is_mine === true);
+  if (mineByFlag) return mineByFlag;
+  // Secondary: explicit client_id match — defensive against an older
+  // BE build that returns the booking object without `is_mine`.
+  if (myClientId != null) {
+    const mineById = list.find((p) => p.booking?.client_id === myClientId);
+    if (mineById) return mineById;
+  }
+  // No match → null. Pre-fix the fallback was "any busy PC in the
+  // tenant", which surfaced strangers' PCs in production.
+  return null;
+}
+
+/**
  * List PCs in the current tenant. Cached for 30s — see the cache
  * docblock at the top of the file. Pass `force: true` to bypass the
  * cache (used by pull-to-refresh handlers).
@@ -229,9 +263,18 @@ export async function partyBook(body: PartyBookBody): Promise<{ ok: boolean }> {
   return res.data;
 }
 
-/** Tezkor qayta bron */
+/**
+ * Tezkor qayta bron.
+ *
+ * Mirrors `bookPc` cache semantics — quickRebook creates a fresh
+ * PcBooking row server-side (MobilePcService::quickRebook), so the
+ * 30s in-memory `listPcs` cache must be dropped or the next read
+ * will still show the just-rebooked PC as `'free'`. Audit gap fix
+ * (booking flow audit item #15).
+ */
 export async function quickRebook(): Promise<{ ok: boolean }> {
   const res = await apiPost<ApiResource<{ ok: boolean }>>('/mobile/pcs/rebook-quick');
+  invalidatePcsCache();
   return res.data;
 }
 
@@ -269,11 +312,21 @@ export async function smartSeat(opts?: {
   };
 }
 
-/** Smart joyni vaqtincha hold qilish */
+/**
+ * Smart joyni vaqtincha hold qilish.
+ *
+ * Server-side this creates a PcBooking row reserving the smart-seat
+ * pick (MobilePcService::smartSeatHold) — same cache implication as
+ * `bookPc` / `quickRebook`. Without `invalidatePcsCache()` the next
+ * `listPcs()` would return the just-held PC as `'free'` for up to
+ * 30 s because the result lives in the module-level cache. Audit
+ * gap fix (booking flow audit item #14).
+ */
 export async function smartSeatHold(pcId: number): Promise<{ ok: boolean }> {
   const res = await apiPost<ApiResource<{ ok: boolean }>>('/mobile/pcs/smart-seat/hold', {
     pc_id: pcId,
   });
+  invalidatePcsCache();
   return res.data;
 }
 

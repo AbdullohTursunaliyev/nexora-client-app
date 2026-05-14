@@ -3,7 +3,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../constants/Colors';
 import { Fonts } from '../../constants/Fonts';
 import { Images } from '../../constants/Images';
-import NexoraLogo from '../icons/NexoraLogo';
 import { useT } from '../../lib/i18n/LocaleProvider';
 
 interface Props {
@@ -11,34 +10,68 @@ interface Props {
   height: number;
 }
 
+/**
+ * Onboarding slide #1 — brand intro / hero.
+ *
+ * Editorial redesign (post-feedback "professional real work"):
+ *   - Full-bleed Full HD photography fills the entire viewport.
+ *   - A two-stop LinearGradient (transparent top → 95% dark bottom)
+ *     keeps the photo legible without painting a flat slab over it.
+ *   - Content sits in the lower third — same convention as Apple
+ *     Music / Netflix / Spotify onboarding hero slides.
+ *
+ * Pre-redesign this page carried a stack of decorative shapes:
+ *   - A 130pt NexoraLogo SVG, a separate "NEXORA" wordmark, a "CLOUD"
+ *     sublabel, a glow ring behind the logo, and a centred two-line
+ *     tagline.
+ *   - 50% opacity on the background image made the hero photo feel
+ *     washed out, like a watermark.
+ *   - The footer carried two more brand tag lines stacked.
+ * The user asked to drop "the shape elements you generated" — every
+ * one of those decorations is gone now. Just the photo, the wordmark,
+ * one tagline, one micro-strap line.
+ */
 export default function OnboardingPage1({ width, height }: Props) {
   const t = useT();
   return (
     <View style={[styles.container, { width, height }]}>
       <ImageBackground
-        source={{ uri: Images.onboarding.cyberCity }}
+        source={{ uri: Images.onboarding.heroArena }}
         style={styles.bg}
-        imageStyle={styles.bgImg}
+        // Pre-redesign the image style set `opacity: 0.5`, washing out
+        // the hero photo. Full opacity now — the gradient overlay
+        // handles legibility, the photo stays as the visual anchor.
+        resizeMode="cover"
       >
+        {/* Three-stop gradient — transparent top to deep-dark bottom.
+            Keeps the upper portion of the image visible while
+            guaranteeing the headline + tagline read crisp white. */}
         <LinearGradient
-          colors={['rgba(11,15,22,0.7)', 'rgba(11,15,22,0.85)', '#0B0F16']}
-          locations={[0, 0.5, 1]}
+          colors={[
+            'rgba(11, 15, 22, 0.15)',
+            'rgba(11, 15, 22, 0.55)',
+            'rgba(11, 15, 22, 0.96)',
+          ]}
+          locations={[0, 0.45, 1]}
           style={StyleSheet.absoluteFillObject}
         />
-        <View style={styles.center}>
-          <NexoraLogo size={130} />
+
+        {/* Content sits in the lower third, anchored to the bottom of
+            the viewport with breathing room above the bottom-bar dots
+            and CTA the parent renders. */}
+        <View style={styles.contentWrap}>
+          <Text style={styles.eyebrow}>{t.onboarding.page1Footer1}</Text>
+
           <Text style={styles.brand}>NEXORA</Text>
-          <Text style={styles.cloud}>CLOUD</Text>
 
-          <View style={styles.taglineWrap}>
-            <Text style={styles.taglineCyan}>{t.onboarding.page1Tagline1}</Text>
-            <Text style={styles.taglineWhite}>{t.onboarding.page1Tagline2}</Text>
+          <View style={styles.taglineBlock}>
+            <Text style={styles.tagline}>
+              {t.onboarding.page1Tagline1}
+            </Text>
+            <Text style={styles.taglineSecondary}>
+              {t.onboarding.page1Tagline2}
+            </Text>
           </View>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>{t.onboarding.page1Footer1}</Text>
-          <Text style={styles.footerText}>{t.onboarding.page1Footer2}</Text>
         </View>
       </ImageBackground>
     </View>
@@ -51,53 +84,45 @@ const styles = StyleSheet.create({
   },
   bg: {
     flex: 1,
+    justifyContent: 'flex-end',
   },
-  bgImg: {
-    opacity: 0.5,
+  contentWrap: {
+    // Bottom-anchored editorial block — generous side padding mirrors
+    // production-app onboarding (Apple Music, Spotify, Revolut) which
+    // give the hero copy ~28pt breathing room on each side.
+    paddingHorizontal: 28,
+    paddingBottom: 150,
+    gap: 14,
   },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 40,
+  eyebrow: {
+    fontFamily: Fonts.inter.medium,
+    fontSize: 12,
+    color: '#00CFFF',
+    letterSpacing: 3,
+    textTransform: 'uppercase',
   },
   brand: {
-    fontFamily: Fonts.orbitron.bold,
-    fontSize: 36,
+    fontFamily: Fonts.orbitron.black,
+    fontSize: 48,
     color: Colors.text,
-    letterSpacing: 6,
-    marginTop: 8,
+    letterSpacing: 4,
+    lineHeight: 54,
   },
-  cloud: {
-    fontFamily: Fonts.inter.medium,
-    fontSize: 14,
-    color: '#8B95A8',
-    letterSpacing: 8,
-    marginTop: 2,
-  },
-  taglineWrap: {
-    alignItems: 'center',
-    marginTop: 36,
+  taglineBlock: {
     gap: 4,
+    marginTop: 4,
   },
-  taglineCyan: {
-    fontFamily: Fonts.inter.semiBold,
-    fontSize: 15,
-    color: '#00CFFF',
-  },
-  taglineWhite: {
-    fontFamily: Fonts.inter.medium,
-    fontSize: 14,
+  tagline: {
+    fontFamily: Fonts.inter.bold,
+    fontSize: 20,
     color: Colors.text,
+    letterSpacing: -0.3,
+    lineHeight: 26,
   },
-  footer: {
-    alignItems: 'center',
-    paddingBottom: 90,
-    gap: 4,
-  },
-  footerText: {
+  taglineSecondary: {
     fontFamily: Fonts.inter.regular,
-    fontSize: 12,
-    color: '#8B95A8',
+    fontSize: 14.5,
+    color: 'rgba(255, 255, 255, 0.78)',
+    lineHeight: 21,
   },
 });

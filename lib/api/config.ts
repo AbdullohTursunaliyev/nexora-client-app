@@ -55,4 +55,11 @@ export const STORAGE_KEYS = {
   CLIENT_TOKEN: 'auth.client_token',
   USER: 'auth.user',
   CURRENT_TENANT: 'auth.current_tenant_id',
+  /**
+   * Per-category push preferences. Stored as a JSON-stringified
+   * { bookings: bool, tournaments: bool, offers: bool, system: bool }
+   * object. Defaults to all-on; missing key = all-on so a fresh
+   * install never silently mutes the user. See app/notification-settings.tsx.
+   */
+  NOTIFICATION_PREFS: 'prefs.notifications',
 } as const;

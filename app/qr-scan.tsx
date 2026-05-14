@@ -9,6 +9,7 @@ import {
   Pressable,
   Platform,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -22,7 +23,6 @@ import LightningIcon from '../components/icons/LightningIcon';
 import GalleryIcon from '../components/icons/GalleryIcon';
 import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
-import KeyboardSafeView from '../components/common/KeyboardSafeView';
 import { useToast } from '../components/common/Toast';
 import * as pcsApi from '../lib/api/services/pcs';
 import { getErrorMessage } from '../lib/api/client';
@@ -185,12 +185,38 @@ export default function QrScanScreen() {
       const picked = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         quality: 1,
+        // Explicit single-select — pre-fix the default-true behaviour
+        // on newer Expo SDKs let the user pick multiple images and
+        // we only consumed the first, which read as "the other picks
+        // were ignored" on devices that surface a multi-select UI.
+        // We only ever decode one QR, so the picker should match.
+        allowsMultipleSelection: false,
       });
       if (picked.canceled) return;
       const uri = picked.assets?.[0]?.uri;
-      if (!uri) return;
+      if (!uri) {
+        // Picker returned a non-canceled empty result — rare but
+        // happens on some Android Xiaomi/Oneplus devices that
+        // pre-generate a URI then fail to materialise the file.
+        toast.error(t.qrScan.galleryPickFailed);
+        return;
+      }
+      // Lazy-import the QR decoder so expo-camera's native bridge
+      // only registers when the user actually invokes it. Top-level
+      // import would crash Expo Go on cold mount.
       const { scanFromURLAsync } = await import('expo-camera');
-      const results = await scanFromURLAsync(uri, ['qr']);
+      // Inner try/catch around the decode call so the catch below
+      // doesn't see a Laravel-style English error from expo-camera
+      // when the image is in an unsupported codec (HEIC on Android,
+      // huge PNGs that OOM the decoder, etc.). Surface "couldn't
+      // read this photo" instead.
+      let results: { data: string }[] = [];
+      try {
+        results = (await scanFromURLAsync(uri, ['qr'])) as { data: string }[];
+      } catch {
+        toast.error(t.qrScan.galleryDecodeFailed);
+        return;
+      }
       const decoded = results?.[0]?.data;
       if (!decoded) {
         toast.error(t.qrScan.galleryDecodeFailed);
@@ -198,6 +224,9 @@ export default function QrScanScreen() {
       }
       handleScanned(decoded);
     } catch (e) {
+      // Reached only when the permission helper or picker itself
+      // throws (very rare). Show the underlying message so we don't
+      // mask a developer-actionable error behind a generic toast.
       toast.error(getErrorMessage(e));
     } finally {
       setGalleryPicking(false);
@@ -212,9 +241,25 @@ export default function QrScanScreen() {
       toast.error(t.qrScan.invalidFormat);
       return;
     }
-    setManualOpen(false);
+    // Pre-fix the modal closed before `submitParsed` finished, so a
+    // failed submit dumped the user back to the camera with no
+    // memory of the code they typed. Now we await the call WITH the
+    // modal still open: on success `router.replace` unmounts the
+    // screen (and the modal with it); on failure the user sees the
+    // error toast OVER the still-open sheet and can retry without
+    // re-typing the code.
     await submitParsed(parsed);
   };
+
+  // Reset the code state when the user cancels out of the manual
+  // sheet (X button or backdrop tap). Pre-fix the previous typed
+  // value persisted across opens — the next time the user invoked
+  // manual entry they saw stale text from the failed prior attempt,
+  // making it unclear whether the input was already submitted.
+  const closeManualSheet = useCallback(() => {
+    setManualOpen(false);
+    setCode('');
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -257,7 +302,13 @@ export default function QrScanScreen() {
                 <QrCameraEmbed
                   onScan={onCameraScan}
                   torchOn={torchOn}
-                  paused={submitting}
+                  // Pause scanning whenever a sheet is open — without
+                  // this the camera could fire onBarcodeScanned while
+                  // the user is typing in the manual sheet, kicking
+                  // off a submit they didn't initiate. The submit
+                  // state also pauses (existing) to block re-scans
+                  // during BE round-trips.
+                  paused={submitting || manualOpen || helpOpen}
                 />
               </Suspense>
 
@@ -341,67 +392,96 @@ export default function QrScanScreen() {
           Standard pattern across iOS / Android for "secondary action
           drawer". Backdrop dismiss + an explicit X for accessibility.
 
-          KeyboardSafeView avoids the soft-keyboard covering the
-          submit button when the user types a code. */}
+          LAYOUT NOTES (two cumulative bug fixes):
+          1. Pre-fix-1 used `<Pressable backdrop> > <Pressable sheet>`
+             with `e.stopPropagation()`. That's a DOM idiom that
+             doesn't map to RN's gesture system — taps inside the
+             sheet could bubble to the backdrop and close the modal.
+             Fixed by switching to sibling layout (Pressable behind,
+             sheet in front).
+          2. Pre-fix-2 wrapped the sheet content in `KeyboardSafeView`
+             (which is `KeyboardAvoidingView` with `flex: 1`). The
+             outer sheet View had no fixed height, so the flex:1
+             KeyboardSafeView collapsed to 0 height — the whole
+             sheet rendered invisible, leaving the user with just
+             a dimmed backdrop and no controls. Now the
+             KeyboardAvoidingView IS the modal root (replaces the
+             outer View), and the sheet sits inside it as a content-
+             sized child. Keyboard avoidance still works (iOS
+             padding behavior pushes the sheet up); the sheet is
+             actually rendered now. */}
       <Modal
         visible={manualOpen}
         transparent
         animationType="slide"
-        onRequestClose={() => setManualOpen(false)}
+        onRequestClose={closeManualSheet}
         statusBarTranslucent
       >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setManualOpen(false)}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            <KeyboardSafeView>
-              <View style={styles.sheetHandle} />
-              <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>{t.qrScan.manualToggle}</Text>
-                <TouchableOpacity
-                  onPress={() => setManualOpen(false)}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel={t.common.cancel}
-                >
-                  <X size={20} color="#8B95A8" />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.sheetSub}>{t.qrScan.manualHint}</Text>
-              <View style={styles.codeInputWrap}>
-                <TextInput
-                  style={styles.codeInput}
-                  placeholder={t.qrScan.manualPlaceholder}
-                  placeholderTextColor="#3A4250"
-                  value={code}
-                  onChangeText={(c) => setCode(c.toUpperCase())}
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  autoFocus
-                  maxLength={40}
-                  onSubmitEditing={onManualSubmit}
-                  returnKeyType="go"
-                />
-              </View>
-              <View
-                style={[styles.sheetSubmitWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}
+        <KeyboardAvoidingView
+          style={styles.sheetRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={closeManualSheet}
+            accessibilityRole="button"
+            accessibilityLabel={t.common.cancel}
+          />
+          <View style={styles.sheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>{t.qrScan.manualToggle}</Text>
+              <TouchableOpacity
+                onPress={closeManualSheet}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel={t.common.cancel}
               >
-                <Button
-                  label={t.qrScan.manualSubmit}
-                  variant="primary"
-                  size="lg"
-                  fullWidth
-                  loading={submitting}
-                  disabled={!code.trim() || submitting}
-                  onPress={onManualSubmit}
-                />
-              </View>
-            </KeyboardSafeView>
-          </Pressable>
-        </Pressable>
+                <X size={20} color="#8B95A8" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.sheetSub}>{t.qrScan.manualHint}</Text>
+            <View style={styles.codeInputWrap}>
+              <TextInput
+                style={styles.codeInput}
+                placeholder={t.qrScan.manualPlaceholder}
+                placeholderTextColor="#3A4250"
+                value={code}
+                onChangeText={(c) => setCode(c.toUpperCase())}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                // autoFocus removed in favour of explicit tap-to-focus —
+                // autoFocus inside a sliding Modal races the slide
+                // animation on Android and the keyboard sometimes
+                // never appears. The user can tap to focus once the
+                // sheet settles, which is more reliable.
+                maxLength={40}
+                onSubmitEditing={onManualSubmit}
+                returnKeyType="go"
+              />
+            </View>
+            <View
+              style={[styles.sheetSubmitWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}
+            >
+              <Button
+                label={t.qrScan.manualSubmit}
+                variant="primary"
+                size="lg"
+                fullWidth
+                loading={submitting}
+                disabled={!code.trim() || submitting}
+                onPress={onManualSubmit}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
-      {/* Help bottom sheet — 3 concrete steps. Replaces the v1's
-          circular "tap the link to see the same subtitle as a toast"
-          anti-pattern. */}
+      {/* Help bottom sheet — same fixed layout as the manual sheet
+          (separate backdrop Pressable BEHIND the sheet View, no
+          Pressable-wrapping-content antipattern). Three concrete
+          steps replace the v1's circular "tap the link to see the
+          same subtitle as a toast" anti-pattern. */}
       <Modal
         visible={helpOpen}
         transparent
@@ -409,14 +489,20 @@ export default function QrScanScreen() {
         onRequestClose={() => setHelpOpen(false)}
         statusBarTranslucent
       >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setHelpOpen(false)}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+        <View style={styles.sheetRoot}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setHelpOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel={t.common.cancel}
+          />
+          <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>{t.qrScan.guide}</Text>
               <TouchableOpacity
                 onPress={() => setHelpOpen(false)}
-                hitSlop={10}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 accessibilityRole="button"
                 accessibilityLabel={t.common.cancel}
               >
@@ -433,8 +519,8 @@ export default function QrScanScreen() {
                 </View>
               ))}
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -571,12 +657,19 @@ const styles = StyleSheet.create({
   gateBtnWrap: {
     marginTop: 10,
   },
-  // Bottom sheets — shared style between manual entry + help.
-  sheetBackdrop: {
+  // Bottom-sheet root — sibling-layout container. Backdrop and
+  // sheet are SIBLINGS inside this view, NOT nested. The backdrop
+  // is an absolute-fill Pressable behind the sheet so taps on the
+  // visible dim area dismiss the modal without intercepting touches
+  // inside the sheet itself.
+  sheetRoot: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'flex-end',
   },
+  // (sheetBackdrop style left unused after the layout fix — the
+  // backdrop now uses StyleSheet.absoluteFill inline so the dim
+  // covers the full modal regardless of the sheet's height.)
   sheet: {
     backgroundColor: '#0F141C',
     borderTopLeftRadius: 24,

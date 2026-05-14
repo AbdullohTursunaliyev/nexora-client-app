@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Eye, EyeOff } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
 import SimpleHeader from '../components/common/SimpleHeader';
@@ -23,6 +24,11 @@ import { useT } from '../lib/i18n/LocaleProvider';
 import { useAuth } from '../store/AuthProvider';
 import KeyboardSafeView from '../components/common/KeyboardSafeView';
 
+// BE enforces min 8 chars on the per-club password (see
+// MobileClubController::joinByCode validator). Mirroring on the
+// FE saves the user a round-trip with a useless 422 toast.
+const PASSWORD_MIN_LENGTH = 8;
+
 // Lazy-load the camera scanner — same Expo Go module-load defence
 // as in qr-scan.tsx. expo-camera triggers a native bridge call at
 // import time which crashes Expo Go if the bundle traverses this
@@ -34,7 +40,16 @@ export default function ClubJoinScreen() {
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { refreshMe } = useAuth();
-  const [code, setCode] = useState('');
+  // Prefilled code from the discover-preview screen — when the
+  // user taps "Join" on a club-preview that already has a code in
+  // its route params, we land here with the same code so they
+  // don't have to retype it.
+  const params = useLocalSearchParams<{ code?: string }>();
+  const [code, setCode] = useState(() =>
+    typeof params.code === 'string' ? params.code.toUpperCase() : '',
+  );
+  const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
 
@@ -59,6 +74,17 @@ export default function ClubJoinScreen() {
     return text.toUpperCase();
   };
 
+  /**
+   * Scanner callback — fills the code input. We DON'T auto-submit
+   * because the user still needs to enter a password; scanning is
+   * just a shortcut for typing the 8-12 char join code.
+   *
+   * Pre-fix this used `setTimeout(() => doJoin(parsed), 0)` to
+   * bypass the closure-stale-state issue of submitting from inside
+   * onChangeText. Now that password is mandatory, the auto-submit
+   * was always going to fail anyway — better UX is to set the code
+   * and let the user focus the password field.
+   */
   const onScanned = useCallback(
     (raw: string) => {
       const parsed = parseJoinQr(raw);
@@ -66,46 +92,27 @@ export default function ClubJoinScreen() {
         toast.error(t.clubJoin.errorEmpty);
         return;
       }
-      // Fill the input + auto-trigger the join so a single scan is
-      // enough to land the user in their club.
       setCode(parsed);
-      // Defer the join slightly so React commits the input update
-      // first — the button press would otherwise read the stale empty
-      // value from closure.
-      setTimeout(() => {
-        void doJoin(parsed);
-      }, 0);
+      toast.info(t.clubJoin.scannedFillPasswordHint);
     },
     [toast, t],
   );
 
-  const doJoin = async (joinCode: string) => {
-    setLoading(true);
-    try {
-      await clubsApi.joinByCode(joinCode);
-      try {
-        await refreshMe();
-      } catch {
-        // /auth/me failure shouldn't block — they'll see the new
-        // club on next focus refresh.
-      }
-      toast.success(t.clubJoin.successToast);
-      router.replace('/(tabs)');
-    } catch (e) {
-      toast.error(getErrorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const onJoin = async () => {
-    if (!code.trim()) {
+    const trimmedCode = code.trim();
+    if (!trimmedCode) {
       toast.error(t.clubJoin.errorEmpty);
+      return;
+    }
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      toast.error(
+        t.clubJoin.errorPasswordTooShort.replace('{n}', String(PASSWORD_MIN_LENGTH)),
+      );
       return;
     }
     setLoading(true);
     try {
-      await clubsApi.joinByCode(code.trim());
+      await clubsApi.joinByCode(trimmedCode, password);
       // Re-fetch the user's membership list BEFORE navigating home —
       // otherwise AuthProvider.clubs still has the pre-join state and
       // the home tab renders without the just-joined club. The user
@@ -158,6 +165,8 @@ export default function ClubJoinScreen() {
             onChangeText={(c) => setCode(c.toUpperCase())}
             autoCapitalize="characters"
             autoCorrect={false}
+            maxLength={32}
+            returnKeyType="next"
           />
         </View>
 
@@ -169,6 +178,52 @@ export default function ClubJoinScreen() {
           <QrIcon size={18} color="#00CFFF" />
           <Text style={styles.qrAltText}>{t.clubJoin.qrAlt}</Text>
         </TouchableOpacity>
+
+        {/* Per-club password — the BE enforces this on join (was
+            SEC-H7: nullable password let attackers create rows
+            with `password IS NULL` and silently link to anyone
+            else's login). Show/hide toggle is the convention for
+            sign-up flows so the user can verify they typed it
+            correctly before commit. */}
+        <View style={styles.passwordLabel}>
+          <Text style={styles.passwordLabelText}>{t.clubJoin.passwordLabel}</Text>
+        </View>
+        <View style={styles.passwordWrap}>
+          <TextInput
+            style={styles.passwordInput}
+            placeholder={t.clubJoin.passwordPlaceholder.replace(
+              '{n}',
+              String(PASSWORD_MIN_LENGTH),
+            )}
+            placeholderTextColor="#6B7280"
+            value={password}
+            onChangeText={setPassword}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={!passwordVisible}
+            textContentType="password"
+            maxLength={64}
+            returnKeyType="go"
+            onSubmitEditing={onJoin}
+          />
+          <TouchableOpacity
+            onPress={() => setPasswordVisible((v) => !v)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              passwordVisible ? t.clubJoin.passwordHide : t.clubJoin.passwordShow
+            }
+          >
+            {passwordVisible ? (
+              <EyeOff size={18} color="#8B95A8" />
+            ) : (
+              <Eye size={18} color="#8B95A8" />
+            )}
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.passwordHint}>
+          {t.clubJoin.passwordHint.replace('{n}', String(PASSWORD_MIN_LENGTH))}
+        </Text>
 
         <View style={styles.helpCard}>
           <Text style={styles.helpTitle}>{t.clubJoin.helpTitle}</Text>
@@ -183,6 +238,10 @@ export default function ClubJoinScreen() {
           size="lg"
           fullWidth
           loading={loading}
+          // Button-side disable mirrors the BE validation gates —
+          // empty code OR too-short password keep the button
+          // unavailable so the user can't fire a guaranteed 422.
+          disabled={!code.trim() || password.length < PASSWORD_MIN_LENGTH || loading}
           onPress={onJoin}
         />
       </View>
@@ -260,6 +319,46 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.inter.medium,
     fontSize: 13,
     color: '#00CFFF',
+  },
+  // Password label — sits above the input field so the user
+  // understands which credential we're asking for (per-club, not
+  // their mobile-auth login password).
+  passwordLabel: {
+    width: '100%',
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  passwordLabelText: {
+    fontFamily: Fonts.inter.medium,
+    fontSize: 12.5,
+    color: '#8B95A8',
+  },
+  passwordWrap: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#141823',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 52,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    gap: 10,
+  },
+  passwordInput: {
+    flex: 1,
+    fontFamily: Fonts.inter.regular,
+    fontSize: 14,
+    color: Colors.text,
+    paddingVertical: 0,
+  },
+  passwordHint: {
+    width: '100%',
+    fontFamily: Fonts.inter.regular,
+    fontSize: 11.5,
+    color: '#6B7280',
+    marginTop: 6,
+    paddingHorizontal: 4,
   },
   helpCard: {
     width: '100%',

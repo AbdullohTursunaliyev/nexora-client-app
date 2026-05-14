@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -6,9 +6,11 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { LogOut } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
 import SimpleHeader from '../components/common/SimpleHeader';
@@ -18,25 +20,55 @@ import Button from '../components/common/Button';
 import PlusIcon from '../components/icons/PlusIcon';
 import HomeIcon from '../components/icons/HomeIcon';
 import { useAuth } from '../store/AuthProvider';
+import * as clubsApi from '../lib/api/services/clubs';
 import { getErrorMessage } from '../lib/api/client';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useDialog } from '../components/common/AppDialog';
 import { useToast } from '../components/common/Toast';
 
+/**
+ * Balance formatter matching the Uzbek thousand-separator style
+ * (space-grouped, no decimal places for whole-sum amounts). The
+ * default `toLocaleString()` returns en-US dot-grouped strings on
+ * RN, which reads as a decimal value to UZ/RU users.
+ */
+function formatBalance(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  return Math.trunc(value).toLocaleString('ru-RU').replace(/,/g, ' ');
+}
+
 export default function ClubsSwitchScreen() {
   const t = useT();
   const dialog = useDialog();
   const toast = useToast();
-  const insets = useSafeAreaInsets();
-  const { clubs, currentTenantId, switchClub } = useAuth();
-  const [switchingId, setSwitchingId] = useState<number | null>(null);
+  const { clubs, currentTenantId, switchClub, refreshMe } = useAuth();
+  // Per-tenant action lock. Replaces the single `switchingId` field
+  // — now a Set so concurrent switch + leave on different rows are
+  // both gated without stepping on each other. Same idiom we use
+  // in friends-list + team-chat.
+  const [actingIds, setActingIds] = useState<Set<number>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
+
+  const lockRow = (id: number) =>
+    setActingIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  const unlockRow = (id: number) =>
+    setActingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
 
   const onSwitch = async (tenantId: number) => {
+    if (actingIds.has(tenantId)) return;
     if (tenantId === currentTenantId) {
       router.back();
       return;
     }
-    setSwitchingId(tenantId);
+    lockRow(tenantId);
     try {
       await switchClub(tenantId);
       // Switching is a single-step success — a Toast feels lighter
@@ -51,15 +83,106 @@ export default function ClubsSwitchScreen() {
         variant: 'destructive',
       });
     } finally {
-      setSwitchingId(null);
+      unlockRow(tenantId);
     }
   };
+
+  const onLeave = async (tenantId: number, tenantName: string) => {
+    if (actingIds.has(tenantId)) return;
+    // Destructive confirm — leaving forfeits balance and cascades
+    // booking deletes. User should explicitly opt in.
+    const ok = await dialog.confirm({
+      title: t.clubsSwitch.leaveConfirmTitle,
+      message: t.clubsSwitch.leaveConfirmMessage.replace('{name}', tenantName),
+      confirmLabel: t.clubsSwitch.leaveBtn,
+      cancelLabel: t.clubsSwitch.cancelBtn,
+      destructive: true,
+    });
+    if (!ok) return;
+
+    lockRow(tenantId);
+    try {
+      await clubsApi.leaveClub(tenantId);
+      toast.info(t.clubsSwitch.leftToast.replace('{name}', tenantName));
+
+      // Stale-currentTenantId guard — if the user just left their
+      // ACTIVE club, the AuthProvider's currentTenantId now points
+      // at a deleted tenant. Every subsequent client.auth call
+      // (bookings, wallet, promotions, etc.) would 401 because the
+      // BE no longer has a Client row for this user × tenant pair.
+      //
+      // Recovery: switch into one of the remaining clubs so the
+      // user lands in a valid session. If no clubs remain, leave
+      // currentTenantId null (AuthProvider treats null as "browse
+      // mode" and gates accordingly).
+      //
+      // Pre-fix this wasn't handled — leaving the current club
+      // left the user in a half-broken state until they manually
+      // tapped another club row. Common support ticket.
+      if (tenantId === currentTenantId) {
+        const remaining = clubs.filter((c) => c.tenant_id !== tenantId);
+        if (remaining.length > 0) {
+          try {
+            await switchClub(remaining[0].tenant_id);
+          } catch {
+            // Auto-switch failure isn't fatal — the next refreshMe
+            // will reconcile, and the user can manually pick a club
+            // from the list.
+          }
+        }
+      }
+
+      // Refresh AuthProvider's membership list so the leaving club
+      // drops out of the local clubs array. Race-safe: if refresh
+      // returns the old list (BE caching), the next focus-driven
+      // refetch picks it up — but in practice the DELETE is
+      // committed-before-response so the immediate /auth/me sees
+      // the new state.
+      try {
+        await refreshMe();
+      } catch {
+        // refreshMe failure is non-blocking; the UI will catch up
+        // when the user navigates back.
+      }
+    } catch (e) {
+      await dialog.alert({
+        title: t.common.error,
+        message: getErrorMessage(e),
+        variant: 'destructive',
+      });
+    } finally {
+      unlockRow(tenantId);
+    }
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshMe();
+    } catch {
+      // Quiet — toast on permanent failures would be noisy; the
+      // refresh control already provides UI feedback (the spinner
+      // dismisses regardless of outcome).
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshMe]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <SimpleHeader title={t.clubsSwitch.headerTitle} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={Colors.primary}
+          />
+        }
+      >
         <Text style={styles.subtitle}>{t.clubsSwitch.sectionMine}</Text>
 
         {clubs.length === 0 ? (
@@ -73,34 +196,67 @@ export default function ClubsSwitchScreen() {
         ) : (
           clubs.map((c) => {
             const isCurrent = c.tenant_id === currentTenantId;
-            const isSwitching = switchingId === c.tenant_id;
+            const isActing = actingIds.has(c.tenant_id);
             return (
-              <TouchableOpacity
+              <View
                 key={c.tenant_id}
                 style={[styles.clubCard, isCurrent && styles.clubCardActive]}
-                activeOpacity={0.85}
-                onPress={() => onSwitch(c.tenant_id)}
-                disabled={isSwitching}
               >
-                <View style={styles.clubIcon}>
-                  <LocationPinIcon size={20} color="#00CFFF" />
-                </View>
-                <View style={styles.clubInfo}>
-                  <Text style={styles.clubName}>{c.tenant_name || `#${c.tenant_id}`}</Text>
-                  {c.balance != null && (
-                    <Text style={styles.clubMeta}>
-                      {Number(c.balance).toLocaleString()} {t.common.currencyUnit}
-                    </Text>
-                  )}
-                </View>
-                {isSwitching ? (
-                  <ActivityIndicator color={Colors.primary} />
-                ) : isCurrent ? (
-                  <View style={styles.activeBadge}>
-                    <CheckIcon size={14} color="#22C55E" />
+                {/* Main row — tap switches into the club. Wrapped
+                    in a TouchableOpacity so the whole card area
+                    (icon + info) is the switch tap target; the
+                    leave button to the right is a SEPARATE
+                    pressable so its tap doesn't trigger a switch. */}
+                <TouchableOpacity
+                  style={styles.clubRowMain}
+                  activeOpacity={0.85}
+                  onPress={() => onSwitch(c.tenant_id)}
+                  disabled={isActing}
+                  accessibilityRole="button"
+                  accessibilityLabel={c.tenant_name || `#${c.tenant_id}`}
+                  accessibilityState={{ selected: isCurrent }}
+                >
+                  <View style={styles.clubIcon}>
+                    <LocationPinIcon size={20} color="#00CFFF" />
                   </View>
-                ) : null}
-              </TouchableOpacity>
+                  <View style={styles.clubInfo}>
+                    <Text style={styles.clubName}>
+                      {c.tenant_name || `#${c.tenant_id}`}
+                    </Text>
+                    {c.balance != null && (
+                      <Text style={styles.clubMeta}>
+                        {formatBalance(Number(c.balance))} {t.common.currencyUnit}
+                      </Text>
+                    )}
+                  </View>
+                  {isActing ? (
+                    <ActivityIndicator color={Colors.primary} />
+                  ) : isCurrent ? (
+                    <View style={styles.activeBadge}>
+                      <CheckIcon size={14} color="#22C55E" />
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+
+                {/* Leave button — separate pressable so its tap
+                    doesn't bubble to the switch action. hitSlop
+                    widens the touch target without bloating the
+                    icon. Hidden while a row action is in flight
+                    so the user can't trigger leave during switch. */}
+                {!isActing && (
+                  <TouchableOpacity
+                    style={styles.leaveBtn}
+                    onPress={() =>
+                      onLeave(c.tenant_id, c.tenant_name || `#${c.tenant_id}`)
+                    }
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t.clubsSwitch.leaveBtn}
+                  >
+                    <LogOut size={16} color="#EF4444" strokeWidth={1.8} />
+                  </TouchableOpacity>
+                )}
+              </View>
             );
           })
         )}
@@ -156,13 +312,16 @@ const styles = StyleSheet.create({
     color: '#8B95A8',
     textAlign: 'center',
   },
+  // Card now hosts main row + leave button as siblings (was
+  // single Touchable). flexDirection row keeps them side-by-side.
   clubCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#141823',
     borderRadius: 14,
-    padding: 14,
-    gap: 12,
+    paddingLeft: 14,
+    paddingRight: 8,
+    paddingVertical: 6,
     marginBottom: 8,
     borderWidth: 1.5,
     borderColor: 'transparent',
@@ -170,6 +329,13 @@ const styles = StyleSheet.create({
   clubCardActive: {
     borderColor: '#00CFFF',
     backgroundColor: 'rgba(0, 207, 255, 0.06)',
+  },
+  clubRowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 8,
   },
   clubIcon: {
     width: 40,
@@ -197,6 +363,20 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(34, 197, 94, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Leave button — sits at the right edge of the card. Small
+  // red tile so destructive nature is obvious without screaming.
+  // Hidden during in-flight actions to prevent accidental tap.
+  leaveBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
   },
   addBtnWrap: { marginTop: 14 },
 });

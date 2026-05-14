@@ -9,10 +9,14 @@ import {
   Modal,
   Pressable,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
 import RobotIcon from '../components/icons/RobotIcon';
@@ -21,13 +25,14 @@ import PhoneCallIcon from '../components/icons/PhoneCallIcon';
 import ShareIcon from '../components/icons/ShareIcon';
 import HeadphonesIcon from '../components/icons/HeadphonesIcon';
 import ChevronRightIcon from '../components/icons/ChevronRightIcon';
+import ChevronDownIcon from '../components/icons/ChevronDownIcon';
 import SearchIcon from '../components/icons/SearchIcon';
 import CloseIcon from '../components/icons/CloseIcon';
 import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
-import KeyboardSafeView from '../components/common/KeyboardSafeView';
 import * as supportApi from '../lib/api/services/support';
+import type { HelpTopic } from '../lib/api/services/support';
 import { getErrorMessage } from '../lib/api/client';
 
 type IconCmp = React.ComponentType<{ size?: number; color?: string }>;
@@ -38,14 +43,38 @@ type IconCmp = React.ComponentType<{ size?: number; color?: string }>;
 const SUPPORT_PHONE = '+998712005050';
 
 // Form modes drive which copy + API method the inline ticket modal
-// uses. Both call BE endpoints that already exist on the API — the
-// previous "coming soon" toast was leftover from before this wiring.
+// uses. Both call BE endpoints that already exist on the API.
 type TicketMode = 'submit' | 'remote';
+
+// Enable LayoutAnimation on Android (iOS is opt-in by default).
+// Used by the FAQ accordion below — pre-Android-13 the experimental
+// flag must be flipped per-app before the first LayoutAnimation call,
+// otherwise the toggle snaps without animating.
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function HelpSupportScreen() {
   const t = useT();
   const toast = useToast();
+  const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState('');
+
+  // FAQ list from BE — pre-fix the screen showed 3 hardcoded topic
+  // labels (topic1/2/3) and tapping any of them just opened the
+  // ticket-submit modal. Users could neither read an answer nor
+  // distinguish between topics. The BE has 8 real Q&A pairs ready
+  // (MobileSupportController::helpTopics) — we surface them here as
+  // an accordion so the user can read first, escalate second.
+  const [topics, setTopics] = useState<HelpTopic[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(true);
+  // Track the currently-expanded question by id so only one answer
+  // is visible at a time (mirrors iOS Settings / Android Phone
+  // help-screen patterns — keeps the surface compact).
+  const [expandedTopicId, setExpandedTopicId] = useState<number | null>(null);
 
   // Ticket modal state. We share a single modal for both "Submit
   // ticket" and "Remote help" — same form shape, different BE call.
@@ -54,13 +83,49 @@ export default function HelpSupportScreen() {
   const [ticketMessage, setTicketMessage] = useState('');
   const [ticketSubmitting, setTicketSubmitting] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await supportApi.listHelpTopics();
+        if (!cancelled) setTopics(Array.isArray(list) ? list : []);
+      } catch {
+        // Silent — empty state covers the failure case. We don't want
+        // a toast on a passive read.
+      } finally {
+        if (!cancelled) setTopicsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Client-side filter — `searchQuery` matches the BE-supplied
+  // question and answer (case-insensitive). The BE endpoint is
+  // public + cheap so re-querying server-side would be wasteful for
+  // an 8-row list; in-memory filtering is fine.
+  const filteredTopics = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return topics;
+    return topics.filter(
+      (tp) =>
+        tp.question.toLowerCase().includes(q) ||
+        (tp.answer ?? '').toLowerCase().includes(q),
+    );
+  }, [topics, searchQuery]);
+
+  const toggleTopic = (id: number) => {
+    // Smooth height transition on expand/collapse. `easeInEaseOut`
+    // matches the default RN Modal slide so the UI feels coherent.
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedTopicId((curr) => (curr === id ? null : id));
+  };
+
   const openSupportChat = () => {
     // Pre-launch: the AI assistant is soon-gated and live operator
     // chat isn't built yet, so the "chat with support" CTA falls
-    // through to the ticket submit modal. The user types their
-    // question once → it lands in the operator queue and we reply
-    // when staff is available. Restore the /ai-assistant push when
-    // the AI screen swaps its placeholder for the live chat UI.
+    // through to the ticket submit modal.
     submitTicket();
   };
 
@@ -70,6 +135,8 @@ export default function HelpSupportScreen() {
     if (can) {
       void Linking.openURL(url);
     } else {
+      // Tablet / simulator / device without dialler — show the
+      // number so the user can copy it manually.
       toast.info(SUPPORT_PHONE);
     }
   };
@@ -82,9 +149,6 @@ export default function HelpSupportScreen() {
 
   const requestRemoteHelp = () => {
     setTicketMode('remote');
-    // Prefill subject + message so the user just needs to add detail
-    // — the "remote help" intent already tells operators what's
-    // wanted, the message is for context.
     setTicketSubject(t.helpSupport.actionRemote);
     setTicketMessage('');
   };
@@ -109,9 +173,6 @@ export default function HelpSupportScreen() {
           message: trimmedMessage,
         });
       } else {
-        // Remote-help intent maps to `reportIssue` of type=tech — the
-        // BE forwards this to the tenant's operator dashboard with a
-        // "needs remote help" tag.
         await supportApi.reportIssue({
           type: 'tech',
           message:
@@ -125,16 +186,6 @@ export default function HelpSupportScreen() {
     } finally {
       setTicketSubmitting(false);
     }
-  };
-
-  const openTopic = (label: string) => {
-    // Pre-launch: the AI assistant is soon-gated. We fall back to
-    // opening the submit-ticket modal pre-filled with the topic
-    // title so the user can ask staff directly. Restore the
-    // /ai-assistant deep-link when the live chat UI ships.
-    setTicketMode('submit');
-    setTicketSubject(label);
-    setTicketMessage('');
   };
 
   const QUICK_ACTIONS: {
@@ -151,16 +202,8 @@ export default function HelpSupportScreen() {
     { id: '4', title: t.helpSupport.actionRemote, subtitle: t.helpSupport.actionRemoteSub, Icon: HeadphonesIcon, color: '#FF34E0', onPress: requestRemoteHelp },
   ];
 
-  const TOPICS = [
-    { id: '1', label: t.helpSupport.topic1 },
-    { id: '2', label: t.helpSupport.topic2 },
-    { id: '3', label: t.helpSupport.topic3 },
-  ];
-
-
   return (
-    <SafeAreaView style={styles.safe} edges={['top','bottom']}>
-      <KeyboardSafeView>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{t.helpSupport.headerTitle}</Text>
       </View>
@@ -168,6 +211,14 @@ export default function HelpSupportScreen() {
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        // Pre-fix the outer view used <KeyboardSafeView> (= a
+        // KeyboardAvoidingView wrapper) — but only the search input
+        // is inside the screen body, and the modal renders in its
+        // own native window where the outer KAV can't reach it
+        // anyway. The ticket modal now carries its OWN KAV root, and
+        // the search input uses `keyboardShouldPersistTaps` so taps
+        // outside dismiss the keyboard naturally.
+        keyboardShouldPersistTaps="handled"
       >
         <LinearGradient
           colors={['#0F1F2E', '#0B0F16']}
@@ -200,17 +251,13 @@ export default function HelpSupportScreen() {
               value={searchQuery}
               onChangeText={setSearchQuery}
               returnKeyType="search"
-              onSubmitEditing={() => {
-                const q = searchQuery.trim();
-                if (q.length === 0) return;
-                // AI assistant soon-gated — fall through to the
-                // submit-ticket modal with the query as the subject.
-                // Restore the /ai-assistant deep-link when the live
-                // chat UI ships.
-                setTicketMode('submit');
-                setTicketSubject(q);
-                setTicketMessage('');
-              }}
+              // Pre-fix Enter on the search input jumped into the
+              // ticket-submit modal regardless of intent. Now the
+              // input drives the FAQ filter (live, in-memory) — and
+              // submitEditing just dismisses the keyboard so the
+              // user can read the filtered list.
+              // The "still need help" CTA below the list is the
+              // explicit ticket-submit path.
             />
             <View style={styles.searchIcon}>
               <SearchIcon size={16} color="#8B95A8" />
@@ -218,7 +265,60 @@ export default function HelpSupportScreen() {
           </View>
         </LinearGradient>
 
-        <Text style={styles.sectionTitle}>{t.helpSupport.quickActions}</Text>
+        <Text style={styles.sectionTitle}>{t.helpSupport.popularTopics}</Text>
+
+        {/* FAQ accordion — real BE topics replace the 3 hardcoded
+            strings that used to live here. Loading + empty + populated
+            states all rendered honestly. */}
+        {topicsLoading ? (
+          <View style={styles.faqLoading}>
+            <ActivityIndicator color={Colors.primary} />
+            <Text style={styles.faqLoadingText}>
+              {t.helpSupport.topicsLoading}
+            </Text>
+          </View>
+        ) : filteredTopics.length === 0 ? (
+          <View style={styles.faqEmpty}>
+            <Text style={styles.faqEmptyText}>
+              {t.helpSupport.topicsEmpty}
+            </Text>
+          </View>
+        ) : (
+          filteredTopics.map((tp) => {
+            const isOpen = expandedTopicId === tp.id;
+            return (
+              <View key={tp.id} style={styles.faqCard}>
+                <TouchableOpacity
+                  style={styles.faqQuestionRow}
+                  activeOpacity={0.75}
+                  onPress={() => toggleTopic(tp.id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: isOpen }}
+                  accessibilityLabel={tp.question}
+                >
+                  <Text style={styles.faqQuestion} numberOfLines={isOpen ? 0 : 2}>
+                    {tp.question}
+                  </Text>
+                  {isOpen ? (
+                    <ChevronDownIcon size={16} color="#00CFFF" />
+                  ) : (
+                    <ChevronRightIcon size={16} color="#8B95A8" />
+                  )}
+                </TouchableOpacity>
+                {isOpen && !!tp.answer && (
+                  <Text style={styles.faqAnswer}>{tp.answer}</Text>
+                )}
+              </View>
+            );
+          })
+        )}
+
+        {/* "Still need help?" CTA above the contact actions — sets
+            expectations that the buttons below escalate beyond the
+            FAQ. Pre-fix this was missing entirely. */}
+        <Text style={styles.stillNeedHelp}>
+          {t.helpSupport.stillNeedHelp}
+        </Text>
 
         <View style={styles.actionsGrid}>
           {QUICK_ACTIONS.map(({ id, title, subtitle, Icon, color, onPress }) => (
@@ -227,6 +327,8 @@ export default function HelpSupportScreen() {
               style={styles.actionCard}
               activeOpacity={0.85}
               onPress={onPress}
+              accessibilityRole="button"
+              accessibilityLabel={title}
             >
               <View style={[styles.actionIcon, { backgroundColor: `${color}1F` }]}>
                 <Icon size={20} color={color} />
@@ -236,40 +338,46 @@ export default function HelpSupportScreen() {
             </TouchableOpacity>
           ))}
         </View>
-
-        <Text style={styles.sectionTitle}>{t.helpSupport.popularTopics}</Text>
-
-        {TOPICS.map((tp) => (
-          <TouchableOpacity
-            key={tp.id}
-            style={styles.topicRow}
-            activeOpacity={0.7}
-            onPress={() => openTopic(tp.label)}
-          >
-            <Text style={styles.topicLabel}>{tp.label}</Text>
-            <ChevronRightIcon size={16} color="#8B95A8" />
-          </TouchableOpacity>
-        ))}
-
-        {/* "View all" link removed pre-launch — it used to push
-            to /ai-assistant which is now soon-gated. The popular
-            topics list above already covers the most common
-            questions, and the Submit/Call/Remote actions below let
-            users escalate to staff when needed. */}
       </ScrollView>
-      </KeyboardSafeView>
 
-      {/* Submit-ticket / remote-help modal. Single modal serves both
-          intents — copy + which BE method to call is driven by
-          `ticketMode`. */}
+      {/* Submit-ticket / remote-help modal.
+          LAYOUT NOTES (post-bug-fix):
+          1. Pre-fix used `<Pressable backdrop> > <Pressable sheet>` with
+             `e.stopPropagation()` — an idiom that doesn't map to RN's
+             gesture system, so taps inside the sheet could bubble to
+             the backdrop and dismiss the modal mid-typing. Sibling
+             layout fixes it (Pressable behind, sheet in front, no
+             nesting).
+          2. Pre-fix the outer `<KeyboardSafeView>` lived OUTSIDE the
+             Modal. React Native renders Modal in its own native
+             window on iOS — so the outer KAV did nothing for the
+             modal's text inputs, and the iOS keyboard could fully
+             cover the message field. The KeyboardAvoidingView is now
+             the modal root, lifting the sheet above the keyboard
+             on both platforms. */}
       <Modal
         visible={ticketMode !== null}
         transparent
         animationType="slide"
         onRequestClose={closeTicketModal}
+        statusBarTranslucent
       >
-        <Pressable style={styles.modalBackdrop} onPress={closeTicketModal}>
-          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+        <KeyboardAvoidingView
+          style={styles.sheetRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={closeTicketModal}
+            accessibilityRole="button"
+            accessibilityLabel={t.settings.cancel}
+          />
+          <View
+            style={[
+              styles.modalSheet,
+              { paddingBottom: Math.max(insets.bottom + 16, 28) },
+            ]}
+          >
             <View style={styles.modalHandle} />
             <View style={styles.modalTitleRow}>
               <Text style={styles.modalTitle}>
@@ -281,6 +389,8 @@ export default function HelpSupportScreen() {
                 onPress={closeTicketModal}
                 hitSlop={10}
                 disabled={ticketSubmitting}
+                accessibilityRole="button"
+                accessibilityLabel={t.settings.cancel}
               >
                 <CloseIcon size={18} color="#8B95A8" />
               </TouchableOpacity>
@@ -296,6 +406,7 @@ export default function HelpSupportScreen() {
               placeholderTextColor="#6B7280"
               autoCapitalize="sentences"
               editable={!ticketSubmitting}
+              maxLength={200}
             />
 
             <Text style={styles.modalLabel}>{t.helpSupport.ticketMessage}</Text>
@@ -308,6 +419,7 @@ export default function HelpSupportScreen() {
               multiline
               numberOfLines={4}
               editable={!ticketSubmitting}
+              maxLength={2000}
             />
 
             <View style={styles.modalFooter}>
@@ -321,15 +433,8 @@ export default function HelpSupportScreen() {
                 onPress={sendTicket}
               />
             </View>
-            {ticketSubmitting && (
-              <ActivityIndicator
-                color={Colors.primary}
-                style={{ marginTop: 8 }}
-                size="small"
-              />
-            )}
-          </Pressable>
-        </Pressable>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -424,6 +529,70 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 10,
   },
+  // FAQ accordion — each question gets a tappable row with a chevron
+  // that flips to a down-arrow when expanded. Border + tinted bg on
+  // open state nudges the eye to the currently-open answer.
+  faqCard: {
+    backgroundColor: '#141823',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  faqQuestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  faqQuestion: {
+    flex: 1,
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13.5,
+    color: Colors.text,
+    lineHeight: 19,
+  },
+  faqAnswer: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 12.5,
+    color: '#8B95A8',
+    lineHeight: 19,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  faqLoading: {
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 24,
+  },
+  faqLoadingText: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 12.5,
+    color: '#8B95A8',
+  },
+  faqEmpty: {
+    backgroundColor: '#141823',
+    borderRadius: 12,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  faqEmptyText: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 13,
+    color: '#8B95A8',
+    textAlign: 'center',
+  },
+  stillNeedHelp: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 12.5,
+    color: '#8B95A8',
+    lineHeight: 18,
+    marginTop: 22,
+    marginBottom: 10,
+  },
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -454,36 +623,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#8B95A8',
   },
-  topicRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#141823',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    marginBottom: 8,
-  },
-  topicLabel: {
-    fontFamily: Fonts.inter.medium,
-    fontSize: 13,
-    color: Colors.text,
-  },
-  viewAll: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  viewAllText: {
-    fontFamily: Fonts.inter.medium,
-    fontSize: 13,
-    color: '#00CFFF',
-  },
-  // Ticket / remote-help modal — bottom sheet pattern. Backdrop is a
-  // pressable that closes on outer-tap; the sheet itself stops
-  // propagation so taps inside don't accidentally dismiss.
-  modalBackdrop: {
+  // Modal root — sibling-backdrop layout. The KeyboardAvoidingView is
+  // the modal root so its `behavior=padding` lifts the sheet above
+  // the on-screen keyboard on iOS. Backdrop is a Pressable absolute-
+  // fill SIBLING (not parent) of the sheet, so taps inside the sheet
+  // don't bubble.
+  sheetRoot: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'flex-end',
   },
   modalSheet: {
@@ -492,7 +639,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 28,
     gap: 10,
   },
   modalHandle: {

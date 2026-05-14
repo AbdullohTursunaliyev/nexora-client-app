@@ -25,18 +25,19 @@ import GamepadIcon from '../components/icons/GamepadIcon';
 import LightningIcon from '../components/icons/LightningIcon';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useDialog } from '../components/common/AppDialog';
-import { useAuth } from '../store/AuthProvider';
 
 export default function ClubPreviewScreen() {
   const t = useT();
   const dialog = useDialog();
   const insets = useSafeAreaInsets();
-  const { refreshMe } = useAuth();
   const { tenantId, code } = useLocalSearchParams<{ tenantId?: string; code?: string }>();
 
   const [club, setClub] = useState<ClubPreview | null>(null);
   const [loading, setLoading] = useState(true);
-  const [joining, setJoining] = useState(false);
+  // `joining` state was removed when this screen stopped doing
+  // its own join — the button now navigates to /club-join (which
+  // owns the password input + actual POST). No async transition
+  // here means no loading flag.
 
   useEffect(() => {
     if (!tenantId) {
@@ -59,34 +60,25 @@ export default function ClubPreviewScreen() {
     })();
   }, [tenantId, t, dialog]);
 
-  const onJoin = async () => {
-    if (!code) {
-      router.push('/club-join');
-      return;
-    }
-    setJoining(true);
-    try {
-      await clubsApi.joinByCode(String(code));
-      // Refresh AuthProvider's clubs list before navigating so the
-      // home tab sees the new membership immediately. Without this
-      // the user would have to restart the app to see the club they
-      // just joined (same bug we fixed in club-join.tsx).
-      try {
-        await refreshMe();
-      } catch {
-        // /auth/me failure shouldn't block the join completion —
-        // we'll catch up on next focus refresh.
-      }
-      router.replace('/(tabs)');
-    } catch (e) {
-      await dialog.alert({
-        title: t.clubDetails.notFoundTitle,
-        message: getErrorMessage(e),
-        variant: 'destructive',
-      });
-    } finally {
-      setJoining(false);
-    }
+  /**
+   * Always route to /club-join when the user taps "Join".
+   *
+   * Pre-fix this screen tried to silently call `joinByCode(code)`
+   * when a code was already in the route params — but the BE
+   * requires a `password` field too, and this screen has no input
+   * for it. Every silent-join attempt 422'd with "The password
+   * field is required" and the user saw a generic error dialog
+   * with no way to act.
+   *
+   * Routing to /club-join (the dedicated form) lets the user enter
+   * the code + password together. We forward the prefilled code as
+   * a route param so they don't have to re-type it.
+   */
+  const onJoin = () => {
+    router.push({
+      pathname: '/club-join',
+      params: code ? { code: String(code) } : {},
+    });
   };
 
   if (loading) {
@@ -171,7 +163,6 @@ export default function ClubPreviewScreen() {
           variant="primary"
           size="lg"
           fullWidth
-          loading={joining}
           onPress={onJoin}
         />
       </View>
