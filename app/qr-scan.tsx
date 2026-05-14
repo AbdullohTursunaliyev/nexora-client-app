@@ -159,12 +159,26 @@ export default function QrScanScreen() {
           }
           return null;
         };
-        // Prefer the `id`-family fields because operators ship the
-        // PC LABEL there (e.g. "PC-01"). The `code` field, when
-        // present, is often a composite ("PC:PC-01") that doesn't
-        // match `pcs.code` verbatim — only consult it when no `id`
-        // field is available.
-        const labelRaw = findKey('pc_id', 'pcid', 'id') ?? findKey('code', 'qr_code', 'qrcode');
+        // Field priority — operators ship the per-PC label under
+        // different keys; we have to try them in order of specificity:
+        //
+        //   1. pc_code / pccode  — explicit per-PC label key. This is
+        //      the shape the user's real stickers use:
+        //          {"pc_code":"PC-01","code":"pc:PC-01"}
+        //      where `code` is a composite tenant:pc string and
+        //      `pc_code` is the actual lookup key that matches
+        //      `pcs.code` in the BE.
+        //   2. pc_id / pcid / id — fallback for stickers that only
+        //      carry an integer id or a generic id-shaped label.
+        //   3. code / qr_code   — last resort. Many sticker generators
+        //      ship the same value here AND under pc_code, but some
+        //      (see Cyberium tenant) ship a different composite that
+        //      does NOT match the BE lookup — so we only consult this
+        //      after the per-PC keys are exhausted.
+        const labelRaw =
+          findKey('pc_code', 'pccode') ??
+          findKey('pc_id', 'pcid', 'id') ??
+          findKey('code', 'qr_code', 'qrcode');
         const labelStr = String(labelRaw ?? '').trim();
         if (labelStr.length > 0) return { code: labelStr };
       } catch {
@@ -188,7 +202,14 @@ export default function QrScanScreen() {
 
     // #4: Lenient extraction — handles partial JSON, comma-separated
     // key/value strings, or querystring fragments. Same field
-    // priority as the JSON branch.
+    // priority as the JSON branch above (pc_code → id → code).
+    const pcCodeAny = text.match(
+      /pc_?code\s*["']?\s*[:=]\s*["']?([^"',}\s]+)/i,
+    );
+    if (pcCodeAny?.[1]) {
+      const labelStr = String(pcCodeAny[1]).replace(/[",]\s*$/, '').trim();
+      if (labelStr.length > 0) return { code: labelStr };
+    }
     const idAny = text.match(
       /(?:pc_?id|^id\b|[^a-z0-9_]id)\s*["']?\s*[:=]\s*["']?([^"',}\s]+)/i,
     );
