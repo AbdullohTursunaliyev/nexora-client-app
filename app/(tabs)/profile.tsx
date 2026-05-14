@@ -22,6 +22,7 @@ import { useAuth } from '../../store/AuthProvider';
 import { useT } from '../../lib/i18n/LocaleProvider';
 import * as clientApi from '../../lib/api/services/client';
 import * as notificationsApi from '../../lib/api/services/notifications';
+import { STORAGE_KEYS } from '../../lib/api/config';
 import {
   setUnreadCount,
   useUnreadCount,
@@ -65,7 +66,10 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // Default = collapsed; only flipped to expanded when the user taps
 // to open. Persisted across launches so a power user who collapsed
 // it doesn't have to re-collapse on every cold start.
-const SOON_COLLAPSED_KEY = 'nexora.profile.soonCollapsed';
+//
+// Now sourced from STORAGE_KEYS for discoverability — every key the
+// app writes to AsyncStorage lives in lib/api/config.ts.
+const SOON_COLLAPSED_KEY = STORAGE_KEYS.PROFILE_SOON_COLLAPSED;
 
 function formatSum(value: number): string {
   if (!Number.isFinite(value)) return '0';

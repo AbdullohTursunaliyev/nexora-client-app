@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { STORAGE_KEYS } from '../api/config';
 
-const STORAGE_KEY = '@nexora/wallet-selected-club';
+// Re-bind to STORAGE_KEYS so this file's key is discoverable via the
+// single source-of-truth map. Audit finding M4.
+const STORAGE_KEY = STORAGE_KEYS.WALLET_SELECTED_CLUB;
 
 export function useSelectedClub() {
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);

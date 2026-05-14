@@ -40,12 +40,17 @@ export default function HomeScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
     try {
-      await Promise.allSettled([refreshMe(), refreshClubs()]);
-      // Bump after the auth/clubs refresh resolves so the header
-      // re-fetches against the fresh tenant context. The increment is
-      // atomic from the user's perspective — the bell badge updates
-      // alongside the carousels rather than racing them.
-      setRefreshKey((n) => n + 1);
+      const results = await Promise.allSettled([refreshMe(), refreshClubs()]);
+      // Bump refreshKey only when at least ONE of the two refreshes
+      // actually succeeded — otherwise the bell badge + carousels
+      // re-fetch against the same stale tenant context and the user
+      // sees a spinner-stops-but-nothing-changed result. Pre-fix the
+      // increment always fired regardless of inner-promise outcomes
+      // (audit M5).
+      const anyFulfilled = results.some((r) => r.status === 'fulfilled');
+      if (anyFulfilled) {
+        setRefreshKey((n) => n + 1);
+      }
     } finally {
       if (Platform.OS !== 'web') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});

@@ -63,7 +63,7 @@ export default function ProfileEditScreen() {
 function ProfileEditInner() {
   const t = useT();
   const insets = useSafeAreaInsets();
-  const { user, saveProfile } = useAuth();
+  const { user, saveProfile, refreshMe } = useAuth();
   const toast = useToast();
 
   const [firstName, setFirstName] = useState(user?.first_name ?? '');
@@ -243,6 +243,16 @@ function ProfileEditInner() {
         return;
       }
       setAvatarUrl(newUrl);
+      // Push the new avatar into AuthProvider's `user` so the home
+      // header + profile tab show it immediately. Pre-fix this only
+      // updated local component state — if the user backed out
+      // without tapping Save, the rest of the app kept rendering
+      // the stale avatar until the next refreshMe() (typically a
+      // cold app restart). Audit finding H2.
+      // Fire-and-forget: failures here don't roll back the upload
+      // (the BE already has the new avatar) and the next focus
+      // will reconcile.
+      refreshMe().catch(() => {});
       toast.success(t.profileEdit.avatarUploadedToast);
     } catch (e) {
       // mapAvatarUploadError turns Laravel's English validator messages

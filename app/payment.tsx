@@ -56,19 +56,38 @@ const FALLBACK_DURATION_HOURS = 1;
  * the same date the user saw on the slot chip is the date that
  * goes into start_at.
  */
-function buildStartAt(startTime: string, startDate?: string): string {
+/**
+ * Returned by `buildStartAt` instead of a single ISO string so the
+ * caller can distinguish "we couldn't parse the inputs" (rare, the
+ * UI should bail) from a successful build. Pre-fix the function
+ * silently returned `new Date().toISOString()` on malformed inputs,
+ * which booked the user at "right now" instead of erroring loudly —
+ * a confusing 4xx-or-nothing outcome the user couldn't act on.
+ * Audit booking LOW #18.
+ */
+type BuiltStartAt =
+  | { ok: true; iso: string }
+  | { ok: false; reason: 'bad_time' | 'bad_date_with_time' };
+
+function buildStartAt(startTime: string, startDate?: string): BuiltStartAt {
   const [hh, mm] = startTime.split(':').map((p) => Number(p));
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return new Date().toISOString();
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) {
+    return { ok: false, reason: 'bad_time' };
+  }
 
   // Prefer the BE-provided date when present + valid. Parse as
   // `YYYY-MM-DDTHH:MM:00` and let `new Date()` apply the local TZ —
-  // matches the BE's "local-time slot" semantics. If the date is
-  // missing or malformed, fall back to the legacy "today + rollover"
-  // behaviour so older deep-links don't crash.
+  // matches the BE's "local-time slot" semantics.
   if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
     const pad = (n: number) => String(n).padStart(2, '0');
     const target = new Date(`${startDate}T${pad(hh)}:${pad(mm)}:00`);
-    if (!Number.isNaN(target.getTime())) return target.toISOString();
+    if (!Number.isNaN(target.getTime())) {
+      return { ok: true, iso: target.toISOString() };
+    }
+    // Date string passed the regex but Date() couldn't parse it
+    // (e.g. "2026-02-30"). Surface a distinct reason so the caller
+    // can show a meaningful toast.
+    return { ok: false, reason: 'bad_date_with_time' };
   }
 
   // Legacy fallback path — used only when startDate is missing
@@ -78,7 +97,7 @@ function buildStartAt(startTime: string, startDate?: string): string {
   if (target.getTime() < Date.now()) {
     target.setDate(target.getDate() + 1);
   }
-  return target.toISOString();
+  return { ok: true, iso: target.toISOString() };
 }
 
 interface PaymentMethodConfig {
@@ -309,9 +328,18 @@ export default function PaymentScreen() {
       // wallet every minute) to package mode (free for the package
       // window). Without it the user would be double-charged: once
       // here, once via session billing.
-      const startAtIso = params.startTime
-        ? buildStartAt(params.startTime, params.startDate)
-        : undefined;
+      // Resolve start_at — bail loudly on malformed inputs rather
+      // than silently booking "right now" as the pre-fix did. Audit
+      // booking LOW #18.
+      let startAtIso: string | undefined;
+      if (params.startTime) {
+        const built = buildStartAt(params.startTime, params.startDate);
+        if (!built.ok) {
+          toast.error(t.payment.errorSeatMissing);
+          return;
+        }
+        startAtIso = built.iso;
+      }
       const holdMinutes = Math.max(1, Math.round(durationHours * 60));
       const packageIdNum = params.packageId ? Number(params.packageId) : null;
       const bookRes = await pcsApi.bookPc(pcId, {

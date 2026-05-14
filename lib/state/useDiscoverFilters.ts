@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FilterKey } from '../../components/discover/FilterChips';
 import { AdvancedFilters } from '../../components/discover/FilterSheet';
+import { STORAGE_KEYS } from '../api/config';
 
 /**
  * Persisted filter state for the discover tab.
@@ -11,9 +12,11 @@ import { AdvancedFilters } from '../../components/discover/FilterSheet';
  * `ready`      — set true after both hydrate from AsyncStorage so the
  *                screen can avoid the flash from the default state to
  *                whatever the user persisted
+ *
+ * Keys sourced from STORAGE_KEYS for discoverability. Audit M4.
  */
-const KEY_FILTER = '@nexora/discover-filter';
-const KEY_ADV = '@nexora/discover-advanced';
+const KEY_FILTER = STORAGE_KEYS.DISCOVER_FILTER;
+const KEY_ADV = STORAGE_KEYS.DISCOVER_ADVANCED;
 
 const DEFAULT_ADV: AdvancedFilters = { minRating: null, maxDistanceKm: null };
 

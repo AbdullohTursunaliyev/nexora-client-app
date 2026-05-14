@@ -2,8 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, R
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { translations, Locale } from './translations';
 import { setCurrentLocale } from './currentLocale';
+import { STORAGE_KEYS } from '../api/config';
 
-const STORAGE_KEY = '@nexora/locale';
+const STORAGE_KEY = STORAGE_KEYS.LOCALE;
 const DEFAULT_LOCALE: Locale = 'uz';
 
 interface LocaleContextValue {

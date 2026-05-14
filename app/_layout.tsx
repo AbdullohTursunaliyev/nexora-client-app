@@ -126,6 +126,15 @@ export default function RootLayout() {
               <Stack.Screen name="clubs-switch" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="friends-list" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="friend-requests" options={{ animation: 'slide_from_right' }} />
+              {/* /session-invites — profile-menu row currently gated
+                  `soon: true` (non-tappable), but the route file
+                  exists at `app/session-invites.tsx` as a
+                  ComingSoonView. Registering it now ensures that
+                  the moment we flip `soon` off — OR any code path
+                  navigates here — expo-router won't crash with
+                  "screen not registered" (same class of bug as the
+                  earlier /my-reviews miss). Audit H1. */}
+              <Stack.Screen name="session-invites" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="write-review" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="club-reviews-list" options={{ animation: 'slide_from_right' }} />
               <Stack.Screen name="my-reviews" options={{ animation: 'slide_from_right' }} />

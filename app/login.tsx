@@ -380,10 +380,21 @@ export default function LoginScreen() {
         onRequestClose={() => setLangSheetOpen(false)}
         statusBarTranslucent
       >
-        <Pressable style={styles.sheetBackdrop} onPress={() => setLangSheetOpen(false)}>
+        {/* Sibling-backdrop pattern — pre-fix this used the nested
+            `<Pressable backdrop>{<Pressable sheet stopPropagation>}`
+            antipattern, which doesn't map cleanly to React Native's
+            gesture system (taps inside the sheet can bubble to the
+            backdrop and dismiss the modal). Same fix applied across
+            qr-scan, settings, help-support sheets. Audit M8. */}
+        <View style={styles.sheetBackdrop}>
           <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setLangSheetOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel={t.common.cancel}
+          />
+          <View
             style={[styles.sheet, { paddingBottom: Math.max(insets.bottom + 16, 20) }]}
-            onPress={(e) => e.stopPropagation()}
           >
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>{t.language.title}</Text>
@@ -412,8 +423,8 @@ export default function LoginScreen() {
                 );
               })}
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );

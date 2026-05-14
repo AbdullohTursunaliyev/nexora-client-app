@@ -44,20 +44,32 @@ export default function ClubPreviewScreen() {
       setLoading(false);
       return;
     }
+    // Cancellation guard — pre-fix tapping preview-A → back →
+    // preview-B in quick succession could resolve preview-A's
+    // promise AFTER preview-B's, clobbering the visible state
+    // with the stale club. The cancelled flag short-circuits the
+    // setClub call for any preview the user has already navigated
+    // away from. Audit M4.
+    let cancelled = false;
     (async () => {
       try {
         const data = await clubsApi.previewClub(Number(tenantId));
+        if (cancelled) return;
         setClub(data);
       } catch (e) {
+        if (cancelled) return;
         await dialog.alert({
           title: t.clubDetails.notFoundTitle,
           message: getErrorMessage(e),
           variant: 'destructive',
         });
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [tenantId, t, dialog]);
 
   /**

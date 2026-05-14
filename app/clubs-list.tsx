@@ -11,6 +11,7 @@ import Button from '../components/common/Button';
 import PlusIcon from '../components/icons/PlusIcon';
 import { useDiscoverClubs } from '../lib/hooks/useDiscoverClubs';
 import { useT } from '../lib/i18n/LocaleProvider';
+import { useToast } from '../components/common/Toast';
 import { useAuth } from '../store/AuthProvider';
 import { Images } from '../constants/Images';
 
@@ -18,15 +19,25 @@ type TabKey = 'mine' | 'all';
 
 export default function ClubsListScreen() {
   const t = useT();
+  const toast = useToast();
   const { clubs: joinedClubs, refreshMe } = useAuth();
   const { clubs: allClubs, loading, refresh: refreshDiscover } = useDiscoverClubs();
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refreshDiscover(), refreshMe()]);
-    } catch {
-      // Refresh failures keep the existing list — no need to surface.
+      // Pre-fix used `Promise.all` + empty `catch {}` — a single
+      // failing inner promise rejected the whole thing AND was
+      // silently swallowed, so the user saw the spinner stop with
+      // no signal that data didn't refresh. allSettled lets one side
+      // succeed independently, and we surface a toast when BOTH fail
+      // (typical of a network drop). Audit M7.
+      const results = await Promise.allSettled([
+        refreshDiscover(),
+        refreshMe(),
+      ]);
+      const allRejected = results.every((r) => r.status === 'rejected');
+      if (allRejected) toast.error(t.common.error);
     } finally {
       setRefreshing(false);
     }
@@ -57,41 +68,78 @@ export default function ClubsListScreen() {
   const list = useMemo(() => {
     if (tab === 'mine') {
       if (joinedClubs.length === 0) return allClubs.filter((c) => c.joined);
-      return joinedClubs.map((m, idx) => {
+      // Project AuthProvider's ClubMembership rows onto the
+      // ClubCard MapClub shape, preferring discover metadata when a
+      // matching tenant_id is found.
+      //
+      // Pre-fix (audit H3) the fallback path fabricated invented
+      // fields when no discover match existed YET — `isOpen: true`
+      // (lying about open hours), `lat/lng: 0` (Atlantic Ocean
+      // coords that break the Direction CTA), `hasPSZone: false`
+      // (false negative), `verified: true` (lying). Those fake
+      // cards rendered with misleading "Open" badges and broken
+      // map deep-links until discover finally arrived and replaced
+      // them.
+      //
+      // The discover hook is still loading on first mount, so we
+      // pre-filter the matched rows. When no match exists AND
+      // discover is still loading, we drop the row from the list —
+      // the loading skeleton below handles that visual gap. When
+      // discover has finished loading AND there's still no match,
+      // the tenant genuinely isn't in the discover feed (operator
+      // marked it unlisted, etc.) — we then synthesise the most
+      // honest card we can: only the fields we definitely know
+      // from membership data, with conservative defaults
+      // (isOpen: false, verified: false) for the ones we don't.
+      return joinedClubs.flatMap((m, idx) => {
         const matched = allClubs.find((c) => String(c.id) === String(m.tenant_id));
         if (matched) {
-          return {
-            ...matched,
-            name: m.tenant_name || matched.name,
-            balance: m.balance,
-            joined: true,
-          };
+          return [
+            {
+              ...matched,
+              name: m.tenant_name || matched.name,
+              balance: m.balance,
+              joined: true,
+            },
+          ];
         }
+        if (loading) {
+          // Skeleton handled by the spinner branch — drop the row.
+          return [];
+        }
+        // Discover finished + no match → tenant genuinely missing
+        // from discover. Synthesise honestly: no fake "Open",
+        // no fake coords, no fake verified badge.
         const fallbackImage =
           (m.club_logo && m.club_logo.length > 0
             ? m.club_logo
             : Images.clubs[idx % Images.clubs.length]) ?? '';
-        return {
-          id: String(m.tenant_id),
-          name: m.tenant_name,
-          type: 'mixed' as const,
-          lat: 0,
-          lng: 0,
-          rating: m.avg_rating ?? 0,
-          reviewCount: m.reviews_count ?? 0,
-          pcCount: m.pcs_total ?? 0,
-          hasPSZone: false,
-          open24h: false,
-          isOpen: true,
-          distanceKm: 0,
-          image: fallbackImage,
-          gallery: [fallbackImage],
-          joined: true,
-          verified: true,
-          address: m.club_location ?? '',
-          description: '',
-          balance: m.balance,
-        };
+        return [
+          {
+            id: String(m.tenant_id),
+            name: m.tenant_name,
+            type: 'mixed' as const,
+            lat: 0,
+            lng: 0,
+            rating: m.avg_rating ?? 0,
+            reviewCount: m.reviews_count ?? 0,
+            pcCount: m.pcs_total ?? 0,
+            hasPSZone: false,
+            open24h: false,
+            // Honest defaults — we don't know if it's open or
+            // verified. The ClubCard's "Open" badge is gated on
+            // isOpen so it just won't render, instead of lying.
+            isOpen: false,
+            distanceKm: 0,
+            image: fallbackImage,
+            gallery: [fallbackImage],
+            joined: true,
+            verified: false,
+            address: m.club_location ?? '',
+            description: '',
+            balance: m.balance,
+          },
+        ];
       });
     }
     // "other clubs" tab — show clubs the user has NOT joined yet so
@@ -102,7 +150,7 @@ export default function ClubsListScreen() {
       return allClubs.filter((c) => !memberSet.has(String(c.id)));
     }
     return allClubs.filter((c) => !c.joined);
-  }, [tab, joinedClubs, allClubs]);
+  }, [tab, joinedClubs, allClubs, loading]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top','bottom']}>

@@ -35,9 +35,16 @@ function formatTimeRange(start: string, durationHours: number): string {
   if (!start) return '';
   const [hh, mm] = start.split(':').map((p) => Number(p));
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return start;
-  const endHour = (hh + Math.max(1, Math.round(durationHours))) % 24;
+  // Compute end time via minute arithmetic so a 1.5h package shows
+  // 14:00 → 15:30, not 14:00 → 16:00. Pre-fix `Math.round(durationHours)`
+  // rounded fractional packages to the nearest hour and dropped 30m
+  // of accuracy on every confirmation card (audit booking LOW #17).
+  const totalMinutes = Math.max(60, Math.round(durationHours * 60));
+  const endMinutes = hh * 60 + mm + totalMinutes;
+  const endHour = Math.floor((endMinutes % (24 * 60)) / 60);
+  const endMin = endMinutes % 60;
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(hh)}:${pad(mm)} - ${pad(endHour)}:${pad(mm)}`;
+  return `${pad(hh)}:${pad(mm)} - ${pad(endHour)}:${pad(endMin)}`;
 }
 
 export default function BookingSuccessScreen() {

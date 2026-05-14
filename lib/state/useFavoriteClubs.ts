@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { STORAGE_KEYS } from '../api/config';
 
-const STORAGE_KEY = '@nexora/favorite-clubs';
+// Sourced from STORAGE_KEYS so all AsyncStorage keys are discoverable
+// in a single map. Audit finding M4.
+const STORAGE_KEY = STORAGE_KEYS.FAVORITE_CLUBS;
 
 /**
  * Module-level singleton for the user's saved-clubs (favorites) list.

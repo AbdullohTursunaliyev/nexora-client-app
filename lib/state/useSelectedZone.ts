@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { STORAGE_KEYS } from '../api/config';
 
-const STORAGE_KEY = '@nexora/selected-zone';
+const STORAGE_KEY = STORAGE_KEYS.SELECTED_ZONE;
 
 /**
  * Selected-zone state — module-level singleton.

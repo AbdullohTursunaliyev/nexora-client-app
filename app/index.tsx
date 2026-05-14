@@ -4,10 +4,9 @@ import { Redirect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/Colors';
 import { useAuth } from '../store/AuthProvider';
+import { STORAGE_KEYS } from '../lib/api/config';
 
 type Target = '/onboarding' | '/login' | '/(tabs)';
-
-const ONBOARDING_KEY = 'hasSeenOnboarding';
 
 export default function Index() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -20,7 +19,7 @@ export default function Index() {
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
 
   useEffect(() => {
-    AsyncStorage.getItem(ONBOARDING_KEY)
+    AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING_SEEN)
       .then((seen) => setHasSeenOnboarding(seen === 'true'))
       .catch(() => setHasSeenOnboarding(false));
   }, []);

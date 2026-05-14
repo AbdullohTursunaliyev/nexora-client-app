@@ -15,6 +15,7 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
+import { STORAGE_KEYS } from '../lib/api/config';
 import OnboardingPage1 from '../components/onboarding/OnboardingPage1';
 import OnboardingPage2 from '../components/onboarding/OnboardingPage2';
 import OnboardingPage3 from '../components/onboarding/OnboardingPage3';
@@ -52,7 +53,7 @@ export default function OnboardingScreen() {
     // they see the slides again on next launch — far better than the
     // screen freezing on a rejected promise.
     try {
-      await AsyncStorage.setItem('hasSeenOnboarding', 'true');
+      await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_SEEN, 'true');
     } catch {
       // ignore
     }
