@@ -71,9 +71,29 @@ export default function QrCameraEmbed({ onScan, torchOn = false, paused = false 
   // times in a row. The camera fires the callback continuously while
   // the QR is in frame; the first hit is the one we want.
   const handledRef = useRef(false);
+  // Last-scanned payload + timestamp — used to debounce duplicate
+  // scans. The camera fires onBarcodeScanned ~10× per second while
+  // a code is in frame, so even with `handledRef` blocking the same
+  // tick, the moment the host unpauses (e.g. after a failed submit
+  // resets `submitting` to false) the next frame would fire again
+  // and spam the user with a stack of identical "PC not found" toasts
+  // — exactly what the user reported.
+  //
+  // Strategy: remember the last raw payload + its scan time. Re-fire
+  // onScan only when (a) the payload is DIFFERENT, or (b) at least
+  // 4 seconds have elapsed since the last accepted scan of this
+  // payload. That window is long enough for the user to either move
+  // the camera off the sticker or for the host's failure toast to
+  // dismiss; short enough that a legitimately retried scan (e.g.
+  // after a brief BE blip) still goes through.
+  const lastPayloadRef = useRef<string>('');
+  const lastPayloadAtRef = useRef<number>(0);
+  const DEDUPE_WINDOW_MS = 4000;
 
   // Re-arm scanning whenever the host pauses then unpauses (e.g. a
-  // submit failed and the user wants to scan again).
+  // submit failed and the user wants to scan again). Doesn't clear
+  // the dedupe memory — that's by design so a re-arm doesn't
+  // accidentally re-fire the just-failed payload one more time.
   useEffect(() => {
     if (!paused) {
       handledRef.current = false;
@@ -99,6 +119,23 @@ export default function QrCameraEmbed({ onScan, torchOn = false, paused = false 
       if (handledRef.current || paused) return;
       const raw = String(result?.data ?? '').trim();
       if (!raw) return;
+      // Dedupe: same payload as the last accepted scan within the
+      // window → swallow silently so the host doesn't see a torrent
+      // of identical scans every time the camera re-arms. Different
+      // payload OR enough time elapsed → proceed.
+      const now = Date.now();
+      if (
+        raw === lastPayloadRef.current &&
+        now - lastPayloadAtRef.current < DEDUPE_WINDOW_MS
+      ) {
+        // Keep `handledRef` true so we don't re-evaluate per-frame.
+        // It'll be reset by the parent's `paused` flip when a fresh
+        // scan attempt is actually wanted.
+        handledRef.current = true;
+        return;
+      }
+      lastPayloadRef.current = raw;
+      lastPayloadAtRef.current = now;
       handledRef.current = true;
       onScan(raw);
     },
