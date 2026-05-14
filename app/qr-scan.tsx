@@ -4,12 +4,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   Modal,
   Pressable,
   Platform,
   ActivityIndicator,
-  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -38,25 +36,6 @@ import { useAuth } from '../store/AuthProvider';
 const QrCameraEmbed = lazy(() => import('../components/qr/QrCameraEmbed'));
 
 /**
- * Detect whether the manual-input buffer looks like a JSON sticker
- * payload so we can flip the input layout from the stylised
- * Orbitron-letterspaced "code slot" to a compact left-aligned mono
- * block that actually FITS a 44-char operator JSON.
- *
- * Heuristic: contains a `{`, OR contains a quoted key (`"id"` /
- * `"code"` / etc.) — the second case catches half-typed JSON where
- * the user retyped from the visually-truncated input slot and
- * dropped the opening brace. Conservative enough that plain
- * sticker codes like `42:ABC123` still get the stylised slot.
- */
-function isJsonShape(s: string): boolean {
-  if (!s) return false;
-  if (s.includes('{')) return true;
-  if (/"(?:id|pc_?id|code|qr_?code|type)"\s*:/i.test(s)) return true;
-  return false;
-}
-
-/**
  * QR-scan screen — camera-first redesign (v3).
  *
  * History:
@@ -65,25 +44,26 @@ function isJsonShape(s: string): boolean {
  *       circular "Инструкция по QR" toast.
  *   v2: Removed the decorative QR; replaced with an empty viewfinder
  *       placeholder + "Tap to scan" button → modal-based scanner.
- *   v3 (this version): Industry-standard camera-first layout.
- *       Live camera fills the upper half of the screen, viewfinder
- *       overlay tells the user where to align the QR. Below: flash
- *       toggle, gallery picker, and a small manual-entry link that
- *       opens a sheet. Help moved to a header icon → bottom sheet.
+ *   v3: Industry-standard camera-first layout. Live camera fills
+ *       the upper half of the screen, viewfinder overlay tells the
+ *       user where to align the QR. Below: flash toggle, gallery
+ *       picker, and a small manual-entry link that opens a sheet.
+ *   v4 (this version): manual-entry link + sheet removed. Operator
+ *       JSON stickers run up to ~50 chars; typing them by hand is
+ *       a UX dead-end at the best of times, and the truncated
+ *       Orbitron+tracking input slot made it actively confusing
+ *       (user retypes the visible fragment, parser rejects). Camera
+ *       and gallery decode are the supported entry points.
  *
  * Why camera-first:
  *   WhatsApp, Telegram, Revolut, PayPal, Sberbank, Tinkoff — every
  *   well-rated QR flow shows the live camera AS the primary visual.
  *   The "tap to open camera" intermediary screen is a custom pattern
  *   that adds friction (extra tap, extra navigation event, slower
- *   permission resolution). The v2 redesign fixed many bugs but kept
- *   that non-standard splash; this version aligns with the
- *   convention users already know.
+ *   permission resolution); this screen aligns with the convention.
  *
- *   Permission gate, manual-code fallback, and gallery fallback are
- *   preserved — they're industry-standard too. They're just rearranged
- *   so the primary path (point camera at sticker → done) is the
- *   default screen state.
+ *   Permission gate + gallery fallback are preserved — both are
+ *   industry-standard and don't require keyboard input.
  */
 export default function QrScanScreen() {
   const t = useT();
@@ -91,13 +71,14 @@ export default function QrScanScreen() {
   const insets = useSafeAreaInsets();
   const { currentTenantId, clubs } = useAuth();
 
-  // Scan / submit / sheet states.
+  // Scan / submit / sheet states. Manual-entry sheet was removed in
+  // favour of camera + gallery only — typing a 44-char operator JSON
+  // by hand was a UX dead-end, and the screen reads cleaner without
+  // the link competing with the camera CTA.
   const [submitting, setSubmitting] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [galleryPicking, setGalleryPicking] = useState(false);
-  const [manualOpen, setManualOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [code, setCode] = useState('');
 
   const noActiveTenant = !currentTenantId;
   const hasClubs = (clubs?.length ?? 0) > 0;
@@ -283,16 +264,13 @@ export default function QrScanScreen() {
     (raw: string) => {
       const parsed = parseQr(raw);
       if (!parsed) {
-        // Preserve JSON casing if the raw payload was JSON-shaped so
-        // the manual sheet shows the user exactly what was scanned;
-        // upper-case simple "42:abc123" stickers for visual polish.
-        const display = raw.trim().startsWith('{') ? raw : raw.toUpperCase();
-        setCode(display);
-        setManualOpen(true);
+        // Manual sheet was retired — failure path now just surfaces
+        // the toast and lets the camera retry. The user moves the
+        // camera off the sticker (or waits ≥4s for the dedupe
+        // window) before another scan kicks in.
         toast.error(t.qrScan.invalidFormat);
         return;
       }
-      setCode(`${parsed.pcId}:${parsed.code}`);
       void submitParsed(parsed);
     },
     [submitParsed, toast, t],
@@ -381,34 +359,6 @@ export default function QrScanScreen() {
     }
   }, [noActiveTenant, galleryPicking, submitting, toast, t, handleScanned]);
 
-  const onManualSubmit = async () => {
-    const trimmed = code.trim();
-    if (!trimmed) return;
-    const parsed = parseQr(trimmed);
-    if (!parsed) {
-      toast.error(t.qrScan.invalidFormat);
-      return;
-    }
-    // Pre-fix the modal closed before `submitParsed` finished, so a
-    // failed submit dumped the user back to the camera with no
-    // memory of the code they typed. Now we await the call WITH the
-    // modal still open: on success `router.replace` unmounts the
-    // screen (and the modal with it); on failure the user sees the
-    // error toast OVER the still-open sheet and can retry without
-    // re-typing the code.
-    await submitParsed(parsed);
-  };
-
-  // Reset the code state when the user cancels out of the manual
-  // sheet (X button or backdrop tap). Pre-fix the previous typed
-  // value persisted across opens — the next time the user invoked
-  // manual entry they saw stale text from the failed prior attempt,
-  // making it unclear whether the input was already submitted.
-  const closeManualSheet = useCallback(() => {
-    setManualOpen(false);
-    setCode('');
-  }, []);
-
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <SimpleHeader title={t.qrScan.headerTitle} />
@@ -477,7 +427,7 @@ export default function QrScanScreen() {
                   // off a submit they didn't initiate. The submit
                   // state also pauses (existing) to block re-scans
                   // during BE round-trips.
-                  paused={submitting || manualOpen || helpOpen}
+                  paused={submitting || helpOpen}
                 />
               </Suspense>
 
@@ -527,22 +477,14 @@ export default function QrScanScreen() {
               </Pressable>
             </View>
 
-            {/* Bottom links row — manual entry + help. Both open
-                bottom sheets. Industry pattern (Revolut, Tinkoff)
-                groups secondary actions as text links below the
-                primary controls so the screen's visual weight stays
-                with the camera + flash/gallery. */}
+            {/* Bottom links row — help link only. Pre-fix this also
+                exposed a "Ввести код вручную" entry into a manual code
+                sheet, but that path encouraged users to retype the
+                sticker payload from a visually-truncated input that
+                hid the real string. Camera scan + gallery decode are
+                the supported entry points; manual typing of a 44-char
+                operator JSON is a UX dead-end at the best of times. */}
             <View style={styles.linksRow}>
-              <TouchableOpacity
-                style={styles.linkBtn}
-                activeOpacity={0.7}
-                onPress={() => setManualOpen(true)}
-                accessibilityRole="button"
-                accessibilityLabel={t.qrScan.manualToggle}
-              >
-                <Text style={styles.linkText}>{t.qrScan.manualToggle}</Text>
-              </TouchableOpacity>
-              <View style={styles.linkDot} />
               <TouchableOpacity
                 style={styles.linkBtn}
                 activeOpacity={0.7}
@@ -557,156 +499,7 @@ export default function QrScanScreen() {
         )}
       </View>
 
-      {/* Manual entry bottom sheet — slides up from the bottom edge.
-          Standard pattern across iOS / Android for "secondary action
-          drawer". Backdrop dismiss + an explicit X for accessibility.
-
-          LAYOUT NOTES (two cumulative bug fixes):
-          1. Pre-fix-1 used `<Pressable backdrop> > <Pressable sheet>`
-             with `e.stopPropagation()`. That's a DOM idiom that
-             doesn't map to RN's gesture system — taps inside the
-             sheet could bubble to the backdrop and close the modal.
-             Fixed by switching to sibling layout (Pressable behind,
-             sheet in front).
-          2. Pre-fix-2 wrapped the sheet content in `KeyboardSafeView`
-             (which is `KeyboardAvoidingView` with `flex: 1`). The
-             outer sheet View had no fixed height, so the flex:1
-             KeyboardSafeView collapsed to 0 height — the whole
-             sheet rendered invisible, leaving the user with just
-             a dimmed backdrop and no controls. Now the
-             KeyboardAvoidingView IS the modal root (replaces the
-             outer View), and the sheet sits inside it as a content-
-             sized child. Keyboard avoidance still works (iOS
-             padding behavior pushes the sheet up); the sheet is
-             actually rendered now. */}
-      <Modal
-        visible={manualOpen}
-        transparent
-        animationType="slide"
-        onRequestClose={closeManualSheet}
-        statusBarTranslucent
-      >
-        <KeyboardAvoidingView
-          style={styles.sheetRoot}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={closeManualSheet}
-            accessibilityRole="button"
-            accessibilityLabel={t.common.cancel}
-          />
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>{t.qrScan.manualToggle}</Text>
-              <TouchableOpacity
-                onPress={closeManualSheet}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                accessibilityRole="button"
-                accessibilityLabel={t.common.cancel}
-              >
-                <X size={20} color="#8B95A8" />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.sheetSub}>{t.qrScan.manualHint}</Text>
-            {/* Input style depends on payload shape — a stylised
-                Orbitron + tracking + centred layout reads as a "code
-                slot" for the simple "42:ABC123" case, but it cripples
-                the JSON case (44 chars of letter-spaced monospace
-                overflow the slot, the centre-aligned text scrolls
-                out from BOTH sides, and the user sees a fragmented
-                middle that doesn't look like what they pasted).
-                Detect JSON-shape and flip to a left-aligned compact
-                layout so the FULL string is legible. */}
-            <View style={styles.codeInputWrap}>
-              <TextInput
-                style={[
-                  styles.codeInput,
-                  isJsonShape(code) && styles.codeInputJson,
-                ]}
-                placeholder={t.qrScan.manualPlaceholder}
-                placeholderTextColor="#3A4250"
-                value={code}
-                // Only upper-case the simple "42:abc123" sticker codes
-                // for visual consistency. If the payload looks JSON-
-                // shaped, uppercasing would corrupt field names
-                // ("code" → "CODE" could mismatch a producer that
-                // ships lowercase keys) AND mangle the JSON syntax
-                // itself for strict parsers. The case-insensitive
-                // findKey in parseQr already handles either casing,
-                // so we err on the side of preserving the user's
-                // exact paste.
-                onChangeText={(c) => setCode(isJsonShape(c) ? c : c.toUpperCase())}
-                // autoCapitalize=none for JSON; characters for plain.
-                // The check runs against the new `c` via the user's
-                // keystroke, so the keyboard reacts the same tick as
-                // the input flips into JSON mode.
-                autoCapitalize={isJsonShape(code) ? 'none' : 'characters'}
-                autoCorrect={false}
-                // autoFocus removed in favour of explicit tap-to-focus —
-                // autoFocus inside a sliding Modal races the slide
-                // animation on Android and the keyboard sometimes
-                // never appears. The user can tap to focus once the
-                // sheet settles, which is more reliable.
-                // Length bumped from 40 → 240 so operator-generated
-                // JSON stickers with multiple fields fit.
-                maxLength={240}
-                // Multi-line for JSON so the entire payload is visible
-                // at once. Single-line height for plain codes so the
-                // slot still reads as a "code box".
-                multiline={isJsonShape(code)}
-                onSubmitEditing={onManualSubmit}
-                returnKeyType="go"
-              />
-            </View>
-            <View
-              style={[styles.sheetSubmitWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}
-            >
-              {/* Manual-submit CTA — lg full-width pill inside the
-                  bottom sheet. Disabled until the user types
-                  something so the BE never sees an empty payload. */}
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={onManualSubmit}
-                disabled={!code.trim() || submitting}
-                accessibilityRole="button"
-                accessibilityLabel={t.qrScan.manualSubmit}
-                accessibilityState={{
-                  disabled: !code.trim() || submitting,
-                  busy: submitting,
-                }}
-                style={[
-                  manualSubmitBtnStyles.btn,
-                  (!code.trim() || submitting) && manualSubmitBtnStyles.btnDisabled,
-                ]}
-              >
-                <LinearGradient
-                  colors={['#3B5BF5', '#8B3DF5']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 1, y: 0.5 }}
-                  style={manualSubmitBtnStyles.fill}
-                >
-                  {submitting ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text
-                      style={manualSubmitBtnStyles.label}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.85}
-                    >
-                      {t.qrScan.manualSubmit}
-                    </Text>
-                  )}
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Help bottom sheet — same fixed layout as the manual sheet
+      {/* Help bottom sheet — sibling-layout backdrop + sheet
           (separate backdrop Pressable BEHIND the sheet View, no
           Pressable-wrapping-content antipattern). Three concrete
           steps replace the v1's circular "tap the link to see the
@@ -932,48 +725,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 14,
   },
-  // minHeight (not fixed `height`) so the wrapper grows with a
-  // multi-line JSON payload. The single-line "42:ABC123" case still
-  // sits at the same 56pt visual baseline because the inner TextInput
-  // is content-sized — only JSON shape pushes the wrapper taller.
-  codeInputWrap: {
-    width: '100%',
-    backgroundColor: '#141823',
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    minHeight: 56,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 207, 255, 0.25)',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  codeInput: {
-    fontFamily: Fonts.orbitron.bold,
-    fontSize: 17,
-    color: Colors.text,
-    letterSpacing: 2.5,
-    textAlign: 'center',
-    paddingVertical: 0,
-  },
-  // JSON sticker mode — flips the input from "stylised code slot"
-  // to "scrollable raw text" so a 44-char {"TYPE":"PC","ID":"PC-01",
-  // "CODE":"PC:PC-01"} is fully legible. Inter regular at 13pt with
-  // no tracking and left-align mirrors a code editor's gutter row.
-  codeInputJson: {
-    fontFamily: Fonts.inter.regular,
-    fontSize: 13,
-    letterSpacing: 0,
-    textAlign: 'left',
-    // Multi-line accommodates wrap when the payload is long enough
-    // that even left-aligned compact text overflows one row.
-    minHeight: 56,
-    maxHeight: 120,
-    paddingVertical: 12,
-  },
-  sheetSubmitWrap: {
-    width: '100%',
-    paddingTop: 4,
-  },
   helpSteps: {
     gap: 14,
     paddingTop: 4,
@@ -1027,24 +778,3 @@ const pickClubBtnStyles = StyleSheet.create({
   },
 });
 
-// Inline manual-submit CTA — 52pt lg pill at the bottom of the
-// manual-entry bottom sheet. Same shape as the other "commit"
-// primaries; sheet-bound layout means we keep alignSelf:'stretch'.
-const manualSubmitBtnStyles = StyleSheet.create({
-  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
-  btnDisabled: { opacity: 0.5 },
-  fill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    paddingHorizontal: 28,
-  },
-  label: {
-    color: '#FFFFFF',
-    fontFamily: Fonts.inter.semiBold,
-    fontSize: 15,
-    letterSpacing: 0.1,
-  },
-});
