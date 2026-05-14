@@ -50,7 +50,6 @@ export default function LocaleProvider({ children }: { children: ReactNode }) {
       // is honoured — only persistence fails, which the user notices
       // on the next launch when it reverts to default. Logging beats
       // swallowing the error in silence (FE-M12).
-      // eslint-disable-next-line no-console
       logWarn('[locale] failed to persist locale to AsyncStorage', err);
     }
   }, []);

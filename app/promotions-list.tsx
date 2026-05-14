@@ -117,7 +117,6 @@ export default function PromotionsListScreen() {
         await switchClub(clubs[0].tenant_id);
         effectiveTenant = clubs[0].tenant_id;
       } catch (err) {
-        // eslint-disable-next-line no-console
         logWarn('[promotions-list] auto switchClub failed', err);
       }
     }
@@ -129,7 +128,6 @@ export default function PromotionsListScreen() {
       const data = await listPromotions();
       setApiPromos(data);
     } catch (err) {
-      // eslint-disable-next-line no-console
       logWarn('[promotions-list] /promotions fetch failed', err);
       setApiPromos([]);
     }

@@ -76,6 +76,15 @@ export default function HomeHeader({
       setRankColor('#94A3B8');
       return () => {};
     }
+    // Pre-fix on a tenant switch the chip flickered: the previous
+    // tenant's rank stayed visible until /summary resolved, then
+    // briefly snapped to the novice fallback if the new tenant's
+    // summary returned no rank shape, then to the real value if
+    // present. Keeping the previous tenant's value during the
+    // in-flight fetch and only resetting to novice on a CONFIRMED
+    // missing-rank response avoids that 200-500ms flash on every
+    // club switch. The catch path still keeps the previous value
+    // (network error shouldn't downgrade the chip).
     let cancelled = false;
     clientApi
       .getSummary()
@@ -85,6 +94,12 @@ export default function HomeHeader({
         if (r) {
           setRankName(r.name);
           setRankColor(r.color);
+        } else {
+          // BE returned a summary with no rank — this tenant has
+          // not assigned the user a rank yet. Reset to novice
+          // fallback so the chip reflects reality.
+          setRankName(t.home.levelDefault);
+          setRankColor('#94A3B8');
         }
       })
       .catch(() => {

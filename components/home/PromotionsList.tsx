@@ -146,7 +146,6 @@ export default function PromotionsList({ loading = false }: Props) {
           await switchClub(firstTenantId);
           effectiveTenant = firstTenantId;
         } catch (err) {
-          // eslint-disable-next-line no-console
           logWarn('[PromotionsList] auto switchClub failed', err);
         }
       }
@@ -163,7 +162,6 @@ export default function PromotionsList({ loading = false }: Props) {
         const data = await listPromotions();
         if (!cancelled) setApiPromos(data);
       } catch (err) {
-        // eslint-disable-next-line no-console
         logWarn('[PromotionsList] /promotions fetch failed', err);
         if (!cancelled) setApiPromos([]);
       } finally {
@@ -222,7 +220,6 @@ export default function PromotionsList({ loading = false }: Props) {
         setApiPromos(data);
         return;
       } catch (err) {
-        // eslint-disable-next-line no-console
         logWarn('[PromotionsList] reload failed, attempting heal', err);
       }
       // Heal path: drop the client_token + re-issue switchClub so the
@@ -233,7 +230,6 @@ export default function PromotionsList({ loading = false }: Props) {
       const data = await listPromotions();
       setApiPromos(data);
     } catch (err) {
-      // eslint-disable-next-line no-console
       logWarn('[PromotionsList] manual reload heal failed', err);
     } finally {
       setFetching(false);

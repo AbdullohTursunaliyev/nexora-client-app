@@ -213,7 +213,6 @@ export function useDiscoverClubs(): {
         // legitimate "no clubs" result. The response interceptor
         // already kicks off the logout path for a dead mobile_token,
         // so we don't need to re-handle that here.
-        // eslint-disable-next-line no-console
         logWarn('[useDiscoverClubs] fetch failed', err);
         return cache ?? [];
       } finally {
