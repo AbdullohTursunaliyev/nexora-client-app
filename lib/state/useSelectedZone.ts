@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../api/config';
+import { authEvents } from '../api/client';
 
 const STORAGE_KEY = STORAGE_KEYS.SELECTED_ZONE;
 
@@ -89,6 +90,17 @@ export function resetSelectedZone(): void {
   // shouldn't block navigation).
   AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
 }
+
+// Cross-user state leak fix — see useFavoriteClubs.ts docblock for
+// the full pattern explanation. Booking-flow zone choice is
+// user-scoped (someone else's previous "pick a VIP seat" choice
+// shouldn't be the default for the next user on the device).
+authEvents.on('auth:logout', () => {
+  resetSelectedZone();
+});
+authEvents.on('auth:unauthorized', () => {
+  resetSelectedZone();
+});
 
 export function useSelectedZone() {
   // `tick` is a render bumper — when the singleton changes, we bump

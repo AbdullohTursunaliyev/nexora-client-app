@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '../api/config';
+import { authEvents } from '../api/client';
 
 // Sourced from STORAGE_KEYS so all AsyncStorage keys are discoverable
 // in a single map. Audit finding M4.
@@ -141,6 +142,51 @@ export function clearFavorites(): void {
   notify();
   void persist();
 }
+
+/**
+ * Wipe on logout / forced re-auth.
+ *
+ * Pre-fix favourites lived under a single device-wide AsyncStorage
+ * key (`@nexora/favorite-clubs`). When user A logged out and user B
+ * logged in on the same device, B saw A's saved clubs because the
+ * key was never scoped or cleared. Audit follow-up — same class of
+ * bug for selected zone / selected wallet club / discover filters /
+ * notification prefs (each wired below in their own module).
+ *
+ * Strategy: subscribe to the auth-bus events that AuthProvider
+ * emits on `resetAuth()`. On either event, wipe both the in-memory
+ * Map AND the AsyncStorage row. The next user starts fresh.
+ *
+ * Tradeoff acknowledged: a user who logs out and back IN to their
+ * own account also loses their favourites — they're keyed by
+ * device, not by user_id, so we can't differentiate. The right
+ * long-term fix is per-user storage keys (`@nexora/favorite-clubs:${userId}`)
+ * which preserves data across same-user logout/login cycles. For
+ * now the strict wipe prevents the cross-user leak which is the
+ * more user-visible problem.
+ */
+async function wipeOnAuthChange(): Promise<void> {
+  currentFavorites = new Map();
+  // Reset the hydrate flag so the NEXT consumer mount re-reads from
+  // AsyncStorage (which is now empty) instead of trusting the stale
+  // module-level Map.
+  hydrated = true; // keep `true` since we're authoritatively empty
+  notify();
+  try {
+    await AsyncStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage write failure isn't critical — in-memory state already
+    // cleared; cold start would just read the stale row which would
+    // be cleared again by the next login event.
+  }
+}
+
+authEvents.on('auth:logout', () => {
+  void wipeOnAuthChange();
+});
+authEvents.on('auth:unauthorized', () => {
+  void wipeOnAuthChange();
+});
 
 /**
  * Subscribe + re-render hook. Mirrors the `useUnreadCount` pattern.

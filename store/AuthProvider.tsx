@@ -65,11 +65,37 @@ export default function AuthProvider({ children }: ProviderProps) {
    * Hard reset — drop tokens + state. Called on explicit logout AND on
    * the auth:unauthorized event (token expired server-side).
    *
+   * AsyncStorage wipe includes EVERY user-scoped key, not just the
+   * auth identity rows. Pre-fix this only cleared `USER` +
+   * `CURRENT_TENANT`, which let the next user on the same device see
+   * the previous user's favourites, wallet-selected club, discover
+   * filters, notification preferences, etc. — each lived under its
+   * own device-wide key (`@nexora/favorite-clubs`,
+   * `@nexora/wallet-selected-club`, `@nexora/discover-filter`,
+   * `@nexora/discover-advanced`, `prefs.notifications`,
+   * `nexora.profile.soonCollapsed`) and was never scoped per user.
+   * Wiping them on logout / unauthorized prevents the cross-user
+   * leak that surfaced during early test-account swaps (e.g. logging
+   * in as 'abl' showed favourites saved while logged in as another
+   * tester earlier).
+   *
+   * Singletons (favorites + selected-zone) also subscribe to
+   * `auth:logout` / `auth:unauthorized` directly so their in-memory
+   * Maps clear synchronously. Per-component hooks
+   * (useSelectedClub / useDiscoverFilters / useNotificationPrefs)
+   * read AsyncStorage on mount, so wiping the storage rows here is
+   * sufficient — the values they already have in component state get
+   * reset on next mount.
+   *
+   * Locale + onboarding-seen are NOT wiped — those are device-level
+   * preferences (the user picked their language, they've seen the
+   * onboarding) that survive account switches.
+   *
    * Also emits `auth:logout` so service-layer caches (pcs catalog,
-   * etc.) can wipe themselves. Pre-fix only the 401 path invalidated
-   * caches; an explicit logout left them warm, so a fresh login as a
-   * different user could read the previous user's data from the
-   * still-valid 30s TTL window.
+   * notifications unread singleton) can wipe themselves. Pre-fix
+   * only the 401 path invalidated caches; an explicit logout left
+   * them warm, so a fresh login as a different user could read the
+   * previous user's data from the still-valid 30s TTL window.
    */
   const resetAuth = useCallback(async () => {
     await tokens.clear();
@@ -77,7 +103,20 @@ export default function AuthProvider({ children }: ProviderProps) {
     setUser(null);
     setClubs([]);
     setCurrentTenantId(null);
-    await AsyncStorage.multiRemove([STORAGE_KEYS.USER, STORAGE_KEYS.CURRENT_TENANT]);
+    await AsyncStorage.multiRemove([
+      // Auth identity (always cleared)
+      STORAGE_KEYS.USER,
+      STORAGE_KEYS.CURRENT_TENANT,
+      // User-scoped feature state — wiped to prevent cross-user leaks
+      STORAGE_KEYS.FAVORITE_CLUBS,
+      STORAGE_KEYS.WALLET_SELECTED_CLUB,
+      STORAGE_KEYS.SELECTED_ZONE,
+      STORAGE_KEYS.DISCOVER_FILTER,
+      STORAGE_KEYS.DISCOVER_ADVANCED,
+      STORAGE_KEYS.NOTIFICATION_PREFS,
+      STORAGE_KEYS.PROFILE_SOON_COLLAPSED,
+      // Locale + ONBOARDING_SEEN intentionally KEPT (device-level prefs)
+    ]);
     authEvents.emit('auth:logout');
   }, []);
 
