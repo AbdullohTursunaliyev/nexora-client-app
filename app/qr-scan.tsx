@@ -84,13 +84,29 @@ export default function QrScanScreen() {
   const hasClubs = (clubs?.length ?? 0) > 0;
 
   /**
-   * QR sticker payload format: `<pc_id>:<secret>` (e.g. `42:abc123`).
-   * Also accepts URL-style payloads `nexora://open?pc=42&code=abc123`.
+   * Accepted QR sticker payloads (operators ship at least one of these
+   * three shapes; the parser tries each in order):
+   *
+   *   1. Plain colon-style:  "42:abc123" / "PC-42:abc123" / "PC42_abc"
+   *   2. URL-style:          "nexora://open?pc=42&code=abc123"
+   *   3. JSON-style:         {"ID":"PC-01","CODE":"PC:PC-01"}
+   *                          {"pc_id":42,"code":"abc123"}
+   *                          {"TYPE":"PC","ID":"42","CODE":"abc123"}
+   *
+   * Pre-fix only #1 and #2 were supported — operator stickers shipping
+   * embedded JSON ("Неверный формат QR" toast on every scan) couldn't
+   * be redeemed at all. The JSON branch does case-insensitive field
+   * lookup (operators ship `ID`/`id`/`pc_id` interchangeably) and pulls
+   * the first digit run out of label-style ids like "PC-01" so they
+   * still map to the BE's integer `pc_id` validation. Audit gap fix.
    */
   const parseQr = (raw: string): { pcId: number; code: string } | null => {
     const text = raw.trim();
     if (!text) return null;
 
+    // #2: URL-style — tried first because it's the only shape where the
+    // payload contains literal `://`, so we don't accidentally route a
+    // URL into the colon-style branch and lose the query string.
     try {
       const u = new URL(text);
       const pc = Number(u.searchParams.get('pc'));
@@ -100,6 +116,42 @@ export default function QrScanScreen() {
       // not a URL — fall through
     }
 
+    // #3: JSON-style — gated on a leading `{` so JSON.parse only fires
+    // when the payload could plausibly be a JSON object. Keeps the cost
+    // of the parse off the hot path for the common `42:abc123` case.
+    if (text.startsWith('{')) {
+      try {
+        const obj = JSON.parse(text) as Record<string, unknown>;
+        // Case-insensitive lookup so operators using PC_ID / pc_id /
+        // pcId / id / Id / ID interchangeably all resolve to the same
+        // payload. Otherwise we'd have to ship a new build every time
+        // a new tenant adopted a slightly different sticker schema.
+        const lcMap: Record<string, unknown> = {};
+        for (const k of Object.keys(obj)) lcMap[k.toLowerCase()] = obj[k];
+        const findKey = (...keys: string[]): unknown => {
+          for (const k of keys) {
+            const v = lcMap[k.toLowerCase()];
+            if (v != null) return v;
+          }
+          return null;
+        };
+        const idRaw = findKey('pc_id', 'pcid', 'id');
+        const codeRaw = findKey('code', 'qr_code', 'qrcode', 'secret');
+        // Extract first digit run from the id so label-style values
+        // ("PC-01", "Zone1-PC42") still produce an integer pc_id. The
+        // BE validator rejects anything non-integer, so we have to
+        // surface a number even when the sticker labels by string.
+        const idStr = String(idRaw ?? '');
+        const m = idStr.match(/(\d+)/);
+        const pc = m ? Number(m[1]) : NaN;
+        const c = codeRaw != null ? String(codeRaw) : '';
+        if (Number.isFinite(pc) && pc > 0 && c) return { pcId: pc, code: c };
+      } catch {
+        // Malformed JSON — fall through to the plain-text branch.
+      }
+    }
+
+    // #1: Plain colon/dash/slash/underscore-separated.
     const m = text.match(/^(?:PC[-_]?)?(\d+)[:\-_/](.+)$/i);
     if (m && m[1] && m[2]) {
       return { pcId: Number(m[1]), code: m[2] };
@@ -139,7 +191,11 @@ export default function QrScanScreen() {
     (raw: string) => {
       const parsed = parseQr(raw);
       if (!parsed) {
-        setCode(raw.toUpperCase());
+        // Preserve JSON casing if the raw payload was JSON-shaped so
+        // the manual sheet shows the user exactly what was scanned;
+        // upper-case simple "42:abc123" stickers for visual polish.
+        const display = raw.trim().startsWith('{') ? raw : raw.toUpperCase();
+        setCode(display);
         setManualOpen(true);
         toast.error(t.qrScan.invalidFormat);
         return;
@@ -468,15 +524,27 @@ export default function QrScanScreen() {
                 placeholder={t.qrScan.manualPlaceholder}
                 placeholderTextColor="#3A4250"
                 value={code}
-                onChangeText={(c) => setCode(c.toUpperCase())}
-                autoCapitalize="characters"
+                // Only upper-case the simple "42:abc123" sticker codes
+                // for visual consistency. If the payload starts with
+                // `{` it's a JSON sticker — uppercasing would corrupt
+                // field names ("id" → "ID" works, but "code" → "CODE"
+                // could mismatch a producer that ships lowercase keys)
+                // AND mangle the JSON syntax itself for strict
+                // parsers. Leave JSON-shaped input untouched.
+                onChangeText={(c) => setCode(c.startsWith('{') ? c : c.toUpperCase())}
+                // autoCapitalize=none for JSON; characters for plain.
+                // Cheap heuristic but it spares the user fighting the
+                // keyboard when they paste a JSON sticker payload.
+                autoCapitalize={code.startsWith('{') ? 'none' : 'characters'}
                 autoCorrect={false}
                 // autoFocus removed in favour of explicit tap-to-focus —
                 // autoFocus inside a sliding Modal races the slide
                 // animation on Android and the keyboard sometimes
                 // never appears. The user can tap to focus once the
                 // sheet settles, which is more reliable.
-                maxLength={40}
+                // Length bumped from 40 → 160 so operator-generated
+                // JSON stickers ({"TYPE":"PC","ID":"PC-01",...}) fit.
+                maxLength={160}
                 onSubmitEditing={onManualSubmit}
                 returnKeyType="go"
               />
