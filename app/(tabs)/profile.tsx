@@ -163,17 +163,35 @@ export default function ProfileScreen() {
   // tab's bell badge stays in sync. Pre-fix profile had its own local
   // state — the two screens disagreed every time one of them refreshed
   // before the other.
-  const loadUnread = useCallback(async () => {
-    try {
-      const res = await notificationsApi.listNotifications(undefined, currentTenantId);
-      const beUnread = typeof res.unread_count === 'number' ? res.unread_count : null;
-      const fallback = (res.items ?? []).filter((n) => !n.read).length;
-      setUnreadCount(beUnread ?? fallback);
-    } catch {
-      // Quiet — keep the previous singleton value rather than zeroing
-      // on a transient network error.
-    }
-  }, [currentTenantId]);
+  //
+  // On failure we schedule ONE retry ~6 s later. Pre-fix the silent
+  // catch meant a transient network error froze the bell badge at 0
+  // (initial singleton value) until the user switched screens — for
+  // a user on a flaky connection who landed straight on profile, the
+  // bell could read "no unread" indefinitely on first launch. Audit
+  // L4. The retry is a one-shot per call site, intentionally — we
+  // don't want unbounded retries on a permanently broken endpoint.
+  const loadUnread = useCallback(
+    async (allowRetry: boolean = true): Promise<void> => {
+      try {
+        const res = await notificationsApi.listNotifications(undefined, currentTenantId);
+        const beUnread = typeof res.unread_count === 'number' ? res.unread_count : null;
+        const fallback = (res.items ?? []).filter((n) => !n.read).length;
+        setUnreadCount(beUnread ?? fallback);
+      } catch {
+        // Quiet — keep the previous singleton value rather than zeroing
+        // on a transient network error.
+        if (allowRetry) {
+          setTimeout(() => {
+            // Second-pass retry, no further retries — if this also
+            // fails the next focus / pull-to-refresh will pick it up.
+            void loadUnread(false);
+          }, 6000);
+        }
+      }
+    },
+    [currentTenantId],
+  );
 
   useEffect(() => {
     void loadSummary();

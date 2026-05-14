@@ -11,6 +11,7 @@ import { listPromotions, type Promotion as ApiPromotion } from '../../lib/api/se
 import { useT, useLocale } from '../../lib/i18n/LocaleProvider';
 import { useAuth } from '../../store/AuthProvider';
 import { tokens } from '../../lib/api/client';
+import { logWarn } from '../../lib/util/logger';
 
 const MAX_VISIBLE = 5;
 const CARD_WIDTH = 280;
@@ -146,7 +147,7 @@ export default function PromotionsList({ loading = false }: Props) {
           effectiveTenant = firstTenantId;
         } catch (err) {
           // eslint-disable-next-line no-console
-          console.warn('[PromotionsList] auto switchClub failed', err);
+          logWarn('[PromotionsList] auto switchClub failed', err);
         }
       }
 
@@ -163,7 +164,7 @@ export default function PromotionsList({ loading = false }: Props) {
         if (!cancelled) setApiPromos(data);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.warn('[PromotionsList] /promotions fetch failed', err);
+        logWarn('[PromotionsList] /promotions fetch failed', err);
         if (!cancelled) setApiPromos([]);
       } finally {
         if (!cancelled) setFetching(false);
@@ -222,7 +223,7 @@ export default function PromotionsList({ loading = false }: Props) {
         return;
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.warn('[PromotionsList] reload failed, attempting heal', err);
+        logWarn('[PromotionsList] reload failed, attempting heal', err);
       }
       // Heal path: drop the client_token + re-issue switchClub so the
       // request interceptor gets a fresh one. Last resort because
@@ -233,7 +234,7 @@ export default function PromotionsList({ loading = false }: Props) {
       setApiPromos(data);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn('[PromotionsList] manual reload heal failed', err);
+      logWarn('[PromotionsList] manual reload heal failed', err);
     } finally {
       setFetching(false);
     }

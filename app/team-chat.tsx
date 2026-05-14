@@ -154,8 +154,15 @@ export default function TeamChatScreen() {
   const loadOlder = useCallback(async () => {
     if (teamId == null) return;
     if (loadingOlder || !hasMoreOlder) return;
-    const oldest = messages[0];
-    if (!oldest || !Number.isFinite(oldest.id) || oldest.id <= 0) {
+    // Find the first BE-confirmed message (id > 0). Pre-fix this
+    // read `messages[0]` and gated on `id <= 0` — which works
+    // 99% of the time because confirmed messages prepend in
+    // chronological order, but breaks if any rendering / sort
+    // change ever puts a pending negative-id message at index 0
+    // while a real message sits below it. Walking the array for
+    // the first id > 0 is robust to that. Audit M3.
+    const oldest = messages.find((m) => Number.isFinite(m.id) && m.id > 0);
+    if (!oldest) {
       // No real (BE-assigned) messages yet → nothing to anchor on.
       return;
     }
@@ -261,7 +268,22 @@ export default function TeamChatScreen() {
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
     try {
       const real = await teamsApi.sendMessage(teamId, trimmed);
-      setMessages((prev) => prev.map((m) => (m.id === optimisticId ? real : m)));
+      // Explicitly set `my_reactions: []` on the swapped-in real
+      // message. The BE returns the new message without a
+      // `my_reactions` field (mirrors the list endpoint shape) but
+      // the optimistic reaction handler reads `m.my_reactions ?? []`
+      // on every tap — fine for the happy path. The edge case the
+      // audit caught (M2) is when a reaction round-trip FAILS: the
+      // rollback filter then reads `(m.my_reactions ?? []).filter(...)`
+      // which is `[]` instead of the real prior server state.
+      // Initialising to `[]` here makes every downstream reaction
+      // path operate on a defined array, so rollback logic stays
+      // consistent.
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === optimisticId ? { ...real, my_reactions: real.my_reactions ?? [] } : m,
+        ),
+      );
     } catch (e) {
       toast.error(getErrorMessage(e));
       // Roll back the optimistic insert AND restore the unsent text

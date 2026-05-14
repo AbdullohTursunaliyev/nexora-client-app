@@ -41,7 +41,33 @@ export default function DiscoverScreen() {
   const toast = useToast();
   const { filter, setFilter, advanced, setAdvanced, ready: filtersReady } = useDiscoverFilters();
   const { clubs, refresh: refreshClubs } = useDiscoverClubs();
-  const userLocation = useUserLocation();
+  const rawLocation = useUserLocation();
+
+  // Distance-stable user location — only updates when the device has
+  // moved more than ~25m. Pre-fix every GPS jitter (which fires
+  // every few seconds on most phones) re-ran the haversine map +
+  // filter pipeline over every club. With even a few dozen clubs
+  // visible that's a meaningful CPU hit on lower-end Android. The
+  // 25m threshold matches what most mapping apps use for "this user
+  // hasn't really moved" — well below the resolution of any
+  // distance filter the user can pick (1 km / 2 km / 5 km).
+  // Audit L2.
+  const [stableLocation, setStableLocation] = useState(rawLocation);
+  useEffect(() => {
+    if (!rawLocation) {
+      setStableLocation(null);
+      return;
+    }
+    if (!stableLocation) {
+      setStableLocation(rawLocation);
+      return;
+    }
+    const deltaM = haversine(stableLocation, rawLocation) * 1000;
+    if (deltaM > 25) {
+      setStableLocation(rawLocation);
+    }
+  }, [rawLocation, stableLocation]);
+  const userLocation = stableLocation;
 
   const [refreshing, setRefreshing] = useState(false);
   const [selectedId, setSelectedId] = useState<string>('');

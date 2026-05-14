@@ -21,7 +21,18 @@ export default function Index() {
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING_SEEN)
       .then((seen) => setHasSeenOnboarding(seen === 'true'))
-      .catch(() => setHasSeenOnboarding(false));
+      .catch(() => {
+        // AsyncStorage threw — VERY rare in practice (storage full or
+        // a permission anomaly on Android). Pre-fix this lumped the
+        // failure with the "key missing" case and dumped the user
+        // back into onboarding. For an already-authenticated user
+        // that's strictly wrong — they finished onboarding ages ago,
+        // they just can't read the flag right now. Treat any storage
+        // failure as "assume seen" so authed users skip straight to
+        // tabs; unauthed users still see /login (the second branch
+        // below kicks in regardless of this flag). Audit L3.
+        setHasSeenOnboarding(true);
+      });
   }, []);
 
   // Wait for both auth boot AND onboarding-flag fetch.

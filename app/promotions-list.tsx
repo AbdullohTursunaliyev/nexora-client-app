@@ -15,6 +15,7 @@ import {
   type Promotion as ApiPromotion,
 } from '../lib/api/services/promotions';
 import type { Promotion as CardPromotion } from '../lib/data/promotions';
+import { logWarn } from '../lib/util/logger';
 
 const ACCENT_COLORS = ['#A78BFA', '#22C55E', '#F59E0B', '#00CFFF', '#FF34E0'];
 
@@ -117,7 +118,7 @@ export default function PromotionsListScreen() {
         effectiveTenant = clubs[0].tenant_id;
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.warn('[promotions-list] auto switchClub failed', err);
+        logWarn('[promotions-list] auto switchClub failed', err);
       }
     }
     if (!effectiveTenant) {
@@ -129,7 +130,7 @@ export default function PromotionsListScreen() {
       setApiPromos(data);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.warn('[promotions-list] /promotions fetch failed', err);
+      logWarn('[promotions-list] /promotions fetch failed', err);
       setApiPromos([]);
     }
   };

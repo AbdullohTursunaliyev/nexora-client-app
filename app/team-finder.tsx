@@ -229,10 +229,13 @@ export default function TeamFinderScreen() {
     }
   };
 
-  const filteredPlayers = useMemo(
-    () => (microOnly ? players.filter((p) => p.has_mic !== false) : players),
-    [players, microOnly],
-  );
+  // Mic-only filter is now BE-authoritative — `MobileTeamController`
+  // returns players matching the `?mic=1` query when the toggle is
+  // on. Pre-fix the FE re-filtered the same list client-side too;
+  // that re-filter was dead code (BE already gated) AND would have
+  // double-counted false positives if the BE ever changed semantics.
+  // Audit L1.
+  const filteredPlayers = players;
 
   // "My teams" = teams the user is in (owner OR member). Sorted so
   // owned teams sit first — those are the ones with admin actions
@@ -247,7 +250,14 @@ export default function TeamFinderScreen() {
     () =>
       tenantTeams
         .filter((tm) => tm.is_member === true || tm.is_owner === true)
-        .sort((a, b) => Number(b.is_owner) - Number(a.is_owner)),
+        // Coerce to boolean before Number() — pre-fix this read
+        // `Number(b.is_owner)` directly, but `is_owner` is typed
+        // `boolean | undefined`; `Number(undefined) === NaN` and
+        // `NaN - NaN === NaN`, which means undefined V8 compare-fn
+        // behaviour. Today the BE always emits is_owner so it works,
+        // but the type allows undefined and a future BE drop would
+        // silently break the sort. Audit M1.
+        .sort((a, b) => Number(!!b.is_owner) - Number(!!a.is_owner)),
     [tenantTeams],
   );
 

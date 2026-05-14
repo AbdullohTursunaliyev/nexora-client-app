@@ -3,6 +3,7 @@ import { Images } from '../../constants/Images';
 import { listNearby } from '../api/services/discover';
 import { authEvents } from '../api/client';
 import { TASHKENT_CENTER, type MapClub, type ClubType } from '../data/clubs';
+import { logWarn } from '../util/logger';
 
 /**
  * Live source of truth for club listings.
@@ -213,7 +214,7 @@ export function useDiscoverClubs(): {
         // already kicks off the logout path for a dead mobile_token,
         // so we don't need to re-handle that here.
         // eslint-disable-next-line no-console
-        console.warn('[useDiscoverClubs] fetch failed', err);
+        logWarn('[useDiscoverClubs] fetch failed', err);
         return cache ?? [];
       } finally {
         inflight = null;

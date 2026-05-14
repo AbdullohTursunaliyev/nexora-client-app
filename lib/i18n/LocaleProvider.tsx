@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { translations, Locale } from './translations';
 import { setCurrentLocale } from './currentLocale';
 import { STORAGE_KEYS } from '../api/config';
+import { logWarn } from '../util/logger';
 
 const STORAGE_KEY = STORAGE_KEYS.LOCALE;
 const DEFAULT_LOCALE: Locale = 'uz';
@@ -50,7 +51,7 @@ export default function LocaleProvider({ children }: { children: ReactNode }) {
       // on the next launch when it reverts to default. Logging beats
       // swallowing the error in silence (FE-M12).
       // eslint-disable-next-line no-console
-      console.warn('[locale] failed to persist locale to AsyncStorage', err);
+      logWarn('[locale] failed to persist locale to AsyncStorage', err);
     }
   }, []);
 
