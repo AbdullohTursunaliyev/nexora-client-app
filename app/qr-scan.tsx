@@ -101,8 +101,19 @@ export default function QrScanScreen() {
    * still map to the BE's integer `pc_id` validation. Audit gap fix.
    */
   const parseQr = (raw: string): { pcId: number; code: string } | null => {
-    const text = raw.trim();
+    let text = raw.trim();
     if (!text) return null;
+
+    // Strip surrounding single/double quotes — operators sometimes
+    // export the QR payload wrapped in quotes (e.g. from a docs page
+    // or chat thread). Without this `'{"ID":...}'` would skip the JSON
+    // branch because text doesn't start with `{`.
+    if (
+      (text.startsWith("'") && text.endsWith("'")) ||
+      (text.startsWith('"') && text.endsWith('"'))
+    ) {
+      text = text.slice(1, -1).trim();
+    }
 
     // #2: URL-style — tried first because it's the only shape where the
     // payload contains literal `://`, so we don't accidentally route a
@@ -116,12 +127,27 @@ export default function QrScanScreen() {
       // not a URL — fall through
     }
 
-    // #3: JSON-style — gated on a leading `{` so JSON.parse only fires
-    // when the payload could plausibly be a JSON object. Keeps the cost
-    // of the parse off the hot path for the common `42:abc123` case.
-    if (text.startsWith('{')) {
+    // #3: JSON-style — look for any `{...}` substring inside the text.
+    // Pre-fix this gated on `text.startsWith('{')` so a payload with
+    // any leading garbage (whitespace inside camera detection,
+    // surrounding quotes from a clipboard paste, BOM byte from a
+    // sticker generator) bypassed the JSON branch entirely. Searching
+    // by first `{` / last `}` makes the parser resilient to that.
+    const jsonStart = text.indexOf('{');
+    const jsonEnd = text.lastIndexOf('}');
+    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+      let jsonCandidate = text.slice(jsonStart, jsonEnd + 1);
+      // Normalise Unicode smart-quotes back to ASCII. Some clipboards
+      // (iOS Notes, macOS Pages, Telegram on some platforms) auto-
+      // convert " → "/" and ' → '/' which makes the substring
+      // un-parseable as JSON. Replacing the four most common smart
+      // variants restores standards-compliant JSON without affecting
+      // operator stickers that already ship ASCII quotes.
+      jsonCandidate = jsonCandidate
+        .replace(/[“”„‟″‶]/g, '"')
+        .replace(/[‘’‚‛′‵]/g, "'");
       try {
-        const obj = JSON.parse(text) as Record<string, unknown>;
+        const obj = JSON.parse(jsonCandidate) as Record<string, unknown>;
         // Case-insensitive lookup so operators using PC_ID / pc_id /
         // pcId / id / Id / ID interchangeably all resolve to the same
         // payload. Otherwise we'd have to ship a new build every time
