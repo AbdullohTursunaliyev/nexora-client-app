@@ -85,22 +85,33 @@ export default function QrScanScreen() {
 
   /**
    * Accepted QR sticker payloads (operators ship at least one of these
-   * three shapes; the parser tries each in order):
+   * shapes; the parser tries each in order and returns the PC's
+   * tenant-scoped `code` label — e.g. "PC-01" / "A28" / "VIP12" —
+   * which the BE looks up directly via the `(tenant_id, code)`
+   * UNIQUE index):
    *
-   *   1. Plain colon-style:  "42:abc123" / "PC-42:abc123" / "PC42_abc"
-   *   2. URL-style:          "nexora://open?pc=42&code=abc123"
-   *   3. JSON-style:         {"ID":"PC-01","CODE":"PC:PC-01"}
-   *                          {"pc_id":42,"code":"abc123"}
-   *                          {"TYPE":"PC","ID":"42","CODE":"abc123"}
+   *   1. Plain bare label:   "PC-01" / "A28" / "42"
+   *   2. URL-style:          "nexora://open?code=PC-01"
+   *   3. JSON-style:         {"ID":"PC-01"} / {"code":"PC-01"}
+   *                          {"TYPE":"PC","ID":"PC-01","CODE":"..."}
+   *   4. Lenient extraction: any `id=PC-01` / `"id":"PC-01"` pair
    *
-   * Pre-fix only #1 and #2 were supported — operator stickers shipping
-   * embedded JSON ("Неверный формат QR" toast on every scan) couldn't
-   * be redeemed at all. The JSON branch does case-insensitive field
-   * lookup (operators ship `ID`/`id`/`pc_id` interchangeably) and pulls
-   * the first digit run out of label-style ids like "PC-01" so they
-   * still map to the BE's integer `pc_id` validation. Audit gap fix.
+   * Pre-fix the parser tried to derive a numeric pc_id (the BE's
+   * integer primary key) from the sticker label — but operator
+   * stickers print the LABEL ("PC-01"), not the id, and the digit
+   * extraction heuristic ("01" → 1) was wrong for any tenant whose
+   * label numbering didn't match its database id sequence. The
+   * BE+FE QR contract is now `code`-only: the FE forwards whatever
+   * the sticker prints and the BE does the tenant-scoped lookup.
+   *
+   * JSON branch field-name priority (for sticker payloads that wrap
+   * the label in a structured object):
+   *   - `id` / `ID` / `pc_id` / `pcid` — the per-PC display label
+   *   - `code` / `CODE` — only as fallback if no id field is present,
+   *     since operators ship `CODE` with different semantics ("PC:PC-01"
+   *     is a composite, not the lookup key for `pcs.code`)
    */
-  const parseQr = (raw: string): { pcId: number; code: string } | null => {
+  const parseQr = (raw: string): { code: string } | null => {
     let text = raw.trim();
     if (!text) return null;
 
@@ -120,38 +131,25 @@ export default function QrScanScreen() {
     // URL into the colon-style branch and lose the query string.
     try {
       const u = new URL(text);
-      const pc = Number(u.searchParams.get('pc'));
-      const c = u.searchParams.get('code') ?? '';
-      if (Number.isFinite(pc) && pc > 0 && c) return { pcId: pc, code: c };
+      const codeParam = u.searchParams.get('code') ?? u.searchParams.get('id');
+      if (codeParam) return { code: codeParam };
     } catch {
       // not a URL — fall through
     }
 
     // #3: JSON-style — look for any `{...}` substring inside the text.
-    // Pre-fix this gated on `text.startsWith('{')` so a payload with
-    // any leading garbage (whitespace inside camera detection,
-    // surrounding quotes from a clipboard paste, BOM byte from a
-    // sticker generator) bypassed the JSON branch entirely. Searching
-    // by first `{` / last `}` makes the parser resilient to that.
     const jsonStart = text.indexOf('{');
     const jsonEnd = text.lastIndexOf('}');
     if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
       let jsonCandidate = text.slice(jsonStart, jsonEnd + 1);
       // Normalise Unicode smart-quotes back to ASCII. Some clipboards
       // (iOS Notes, macOS Pages, Telegram on some platforms) auto-
-      // convert " → "/" and ' → '/' which makes the substring
-      // un-parseable as JSON. Replacing the four most common smart
-      // variants restores standards-compliant JSON without affecting
-      // operator stickers that already ship ASCII quotes.
+      // convert " → "/" and ' → '/'.
       jsonCandidate = jsonCandidate
         .replace(/[“”„‟″‶]/g, '"')
         .replace(/[‘’‚‛′‵]/g, "'");
       try {
         const obj = JSON.parse(jsonCandidate) as Record<string, unknown>;
-        // Case-insensitive lookup so operators using PC_ID / pc_id /
-        // pcId / id / Id / ID interchangeably all resolve to the same
-        // payload. Otherwise we'd have to ship a new build every time
-        // a new tenant adopted a slightly different sticker schema.
         const lcMap: Record<string, unknown> = {};
         for (const k of Object.keys(obj)) lcMap[k.toLowerCase()] = obj[k];
         const findKey = (...keys: string[]): unknown => {
@@ -161,82 +159,59 @@ export default function QrScanScreen() {
           }
           return null;
         };
-        const idRaw = findKey('pc_id', 'pcid', 'id');
-        const codeRaw = findKey('code', 'qr_code', 'qrcode', 'secret');
-        // Extract first digit run from the id so label-style values
-        // ("PC-01", "Zone1-PC42") still produce an integer pc_id. The
-        // BE validator rejects anything non-integer, so we have to
-        // surface a number even when the sticker labels by string.
-        const idStr = String(idRaw ?? '');
-        const m = idStr.match(/(\d+)/);
-        const pc = m ? Number(m[1]) : NaN;
-        const c = codeRaw != null ? String(codeRaw) : '';
-        if (Number.isFinite(pc) && pc > 0 && c) return { pcId: pc, code: c };
+        // Prefer the `id`-family fields because operators ship the
+        // PC LABEL there (e.g. "PC-01"). The `code` field, when
+        // present, is often a composite ("PC:PC-01") that doesn't
+        // match `pcs.code` verbatim — only consult it when no `id`
+        // field is available.
+        const labelRaw = findKey('pc_id', 'pcid', 'id') ?? findKey('code', 'qr_code', 'qrcode');
+        const labelStr = String(labelRaw ?? '').trim();
+        if (labelStr.length > 0) return { code: labelStr };
       } catch {
-        // Malformed JSON — fall through to the plain-text branch.
+        // Malformed JSON — fall through.
       }
     }
 
-    // #1: Plain colon/dash/slash/underscore-separated.
-    const plainMatch = text.match(/^(?:PC[-_]?)?(\d+)[:\-_/](.+)$/i);
-    if (plainMatch && plainMatch[1] && plainMatch[2]) {
-      return { pcId: Number(plainMatch[1]), code: plainMatch[2] };
+    // #1: Plain bare label — anything 1-64 chars that doesn't have
+    // structural markers (no `{`, `=`, `://`, etc.). Operators that
+    // ship raw labels like "PC-01" or "A28" land here.
+    if (
+      text.length > 0 &&
+      text.length <= 64 &&
+      !text.includes('{') &&
+      !text.includes('=') &&
+      !text.includes(' ') &&
+      !text.includes('://')
+    ) {
+      return { code: text };
     }
 
-    // #4: ABSOLUTE LAST RESORT — scattered key/value extraction.
-    //
-    // The manual-entry TextInput uses a fixed-width slot at fontSize 17
-    // + letterSpacing 2.5 + textAlign:center, so a 44-char operator
-    // JSON ({"TYPE":"PC","ID":"PC-01","CODE":"PC:PC-01"}) renders
-    // VISIBLY truncated — the user sees only the middle ~20 chars
-    // ('C-01","CODE":"PC:PC-01"}-style) and assumes that's what they
-    // typed. If they paste then submit, parseQr receives the full
-    // 44 chars (TextInput.value is the underlying string, not the
-    // visible substring) — but if they manually retype based on the
-    // truncated view, the actual buffer has no leading `{` and the
-    // JSON branch above (which needs an opening brace anywhere in
-    // the text) bails.
-    //
-    // This branch is the safety net for both shapes:
-    //   - Half-typed JSON missing its envelope: 'C-01","CODE":"PC..."'
-    //   - Comma-separated key/value strings:    'id=PC-01,code=PC:PC-01'
-    //   - Querystring fragments:                'pc_id=42&code=abc123'
-    //
-    // It scans for ANY `(pc_id|id):value` and ANY `(code|secret):value`
-    // pair regardless of envelope, quoting, or surrounding garbage.
-    // Then pulls the first digit run out of the id value (operator
-    // labels like "PC-01" still produce an integer pc_id=1) and uses
-    // the matched code value verbatim. If both come back populated,
-    // we submit — the BE is the authority on whether the resulting
-    // pair actually unlocks a PC.
+    // #4: Lenient extraction — handles partial JSON, comma-separated
+    // key/value strings, or querystring fragments. Same field
+    // priority as the JSON branch.
     const idAny = text.match(
       /(?:pc_?id|^id\b|[^a-z0-9_]id)\s*["']?\s*[:=]\s*["']?([^"',}\s]+)/i,
     );
+    if (idAny?.[1]) {
+      const labelStr = String(idAny[1]).replace(/[",]\s*$/, '').trim();
+      if (labelStr.length > 0) return { code: labelStr };
+    }
     const codeAny = text.match(
-      /(?:qr_?code|code|secret)\s*["']?\s*[:=]\s*["']?([^"',}]+)/i,
+      /(?:qr_?code|code)\s*["']?\s*[:=]\s*["']?([^"',}]+)/i,
     );
-    if (codeAny) {
-      // Prefer the labelled id if present; otherwise fall back to the
-      // first standalone digit anywhere in the text. Operator stickers
-      // typically embed the integer PC index in the label even when
-      // the envelope is unconventional.
-      const idStr = idAny?.[1] ?? text;
-      const digitMatch = String(idStr).match(/(\d+)/);
-      const pc = digitMatch ? Number(digitMatch[1]) : NaN;
-      const c = String(codeAny[1] ?? '')
-        .replace(/[",]\s*$/, '')
-        .trim();
-      if (Number.isFinite(pc) && pc > 0 && c) return { pcId: pc, code: c };
+    if (codeAny?.[1]) {
+      const labelStr = String(codeAny[1]).replace(/[",]\s*$/, '').trim();
+      if (labelStr.length > 0) return { code: labelStr };
     }
 
     return null;
   };
 
   const submitParsed = useCallback(
-    async (parsed: { pcId: number; code: string }) => {
+    async (parsed: { code: string }) => {
       setSubmitting(true);
       try {
-        const res = await pcsApi.openByQr({ pc_id: parsed.pcId, code: parsed.code });
+        const res = await pcsApi.openByQr({ code: parsed.code });
         if (res.ok) {
           if (Platform.OS !== 'web') {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});

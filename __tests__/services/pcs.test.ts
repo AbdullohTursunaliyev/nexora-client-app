@@ -129,15 +129,17 @@ describe('pcs service', () => {
     expect(mockedDelete).toHaveBeenCalledWith('/mobile/pcs/7/book');
   });
 
-  test('openByQr posts pc_id + code (NOT qr_code)', async () => {
-    // BE validator (MobileOpenQrRequest) requires `pc_id` + `code` as
-    // separate fields. Pre-fix the FE sent `{qr_code: <raw>}` and
-    // every call 422'd silently.
+  test('openByQr posts code only (BE looks up by tenant-scoped pcs.code)', async () => {
+    // BE validator (MobileOpenQrRequest) requires `code` only — the
+    // integer pc_id is resolved server-side via the (tenant_id, code)
+    // UNIQUE index. Pre-fix the FE sent `{pc_id, code}` and tried to
+    // guess pc_id by digit-extraction from labels like "PC-01", which
+    // was wrong for every tenant whose db ids weren't lockstep with
+    // its sticker numbering.
     mockedPost.mockResolvedValueOnce({ data: { ok: true } });
-    await pcs.openByQr({ pc_id: 42, code: 'ABC123' });
+    await pcs.openByQr({ code: 'PC-01' });
     expect(mockedPost).toHaveBeenCalledWith('/mobile/pcs/open', {
-      pc_id: 42,
-      code: 'ABC123',
+      code: 'PC-01',
     });
   });
 

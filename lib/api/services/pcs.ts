@@ -179,9 +179,17 @@ export interface SmartQueueItem {
 }
 
 interface OpenByQrBody {
-  /** Numeric PC id (BE-validated as `required|integer|min:1`). */
-  pc_id: number;
-  /** Rotating / static code printed alongside the QR on the PC sticker. */
+  /**
+   * The PC's tenant-scoped `code` label (e.g. "PC-01", "A28", "VIP12").
+   * Maps directly to the `pcs.code` column on the BE; the lookup uses
+   * the `(tenant_id, code)` UNIQUE index so it's exact and fast.
+   *
+   * Pre-fix this contract also carried a numeric `pc_id`, but the BE
+   * had no way for the FE to know the primary key from the sticker —
+   * stickers print the label, not the id. The redesigned contract is
+   * code-only; the BE resolves the integer id internally for caller-
+   * identity checks (active session / booking ownership).
+   */
   code: string;
 }
 
