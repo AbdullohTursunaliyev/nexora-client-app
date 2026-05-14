@@ -13,6 +13,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { User } from 'lucide-react-native';
 import { router } from 'expo-router';
 import KeyboardSafeView from '../components/common/KeyboardSafeView';
@@ -21,7 +22,6 @@ import { Fonts } from '../constants/Fonts';
 import SimpleHeader from '../components/common/SimpleHeader';
 import ChevronDownIcon from '../components/icons/ChevronDownIcon';
 import MailIcon from '../components/icons/MailIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
 import { getErrorMessage } from '../lib/api/client';
@@ -342,22 +342,37 @@ export default function TeamFinderScreen() {
                         <ActivityIndicator color="#00CFFF" />
                       ) : (
                         <View style={styles.inviteActions}>
-                          <Button
-                            label={t.teamFinder.inviteAccept}
-                            variant="secondary"
-                            size="sm"
+                          {/* Accept = solid cyan sm secondary so it
+                              reads as the obvious-good action. */}
+                          <TouchableOpacity
+                            activeOpacity={0.85}
                             onPress={() =>
                               onRespondInvite(inv.id, 'accept', inv.team_name, inv.team_id)
                             }
-                          />
-                          <Button
-                            label={t.teamFinder.inviteDecline}
-                            variant="ghost"
-                            size="sm"
+                            accessibilityRole="button"
+                            accessibilityLabel={t.teamFinder.inviteAccept}
+                            style={inviteAcceptBtnStyles.btn}
+                          >
+                            <Text style={inviteAcceptBtnStyles.label}>
+                              {t.teamFinder.inviteAccept}
+                            </Text>
+                          </TouchableOpacity>
+                          {/* Decline = ghost (no fill) cyan label
+                              so the destructive choice reads as
+                              clearly subordinate. */}
+                          <TouchableOpacity
+                            activeOpacity={0.7}
                             onPress={() =>
                               onRespondInvite(inv.id, 'decline', inv.team_name, inv.team_id)
                             }
-                          />
+                            accessibilityRole="button"
+                            accessibilityLabel={t.teamFinder.inviteDecline}
+                            style={inviteDeclineBtnStyles.btn}
+                          >
+                            <Text style={inviteDeclineBtnStyles.label}>
+                              {t.teamFinder.inviteDecline}
+                            </Text>
+                          </TouchableOpacity>
                         </View>
                       )}
                     </View>
@@ -502,23 +517,57 @@ export default function TeamFinderScreen() {
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         {tab === 'create' ? (
-          <Button
-            label={t.teamFinder.createBtn}
-            variant="primary"
-            size="lg"
-            fullWidth
-            loading={creating}
-            disabled={newTeamName.trim().length < 2 || creating}
+          // Create-team commit CTA — full lg pill, gated on name
+          // length ≥ 2 (BE validator) and not-already-submitting.
+          <TouchableOpacity
+            activeOpacity={0.85}
             onPress={onCreateTeam}
-          />
+            disabled={newTeamName.trim().length < 2 || creating}
+            accessibilityRole="button"
+            accessibilityLabel={t.teamFinder.createBtn}
+            accessibilityState={{
+              disabled: newTeamName.trim().length < 2 || creating,
+              busy: creating,
+            }}
+            style={[
+              createTeamBtnStyles.btn,
+              (newTeamName.trim().length < 2 || creating) &&
+                createTeamBtnStyles.btnDisabled,
+            ]}
+          >
+            <LinearGradient
+              colors={['#3B5BF5', '#8B3DF5']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={createTeamBtnStyles.fill}
+            >
+              {creating ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={createTeamBtnStyles.label}>{t.teamFinder.createBtn}</Text>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
         ) : (
-          <Button
-            label={t.teamFinder.createBtn}
-            variant="primary"
-            size="lg"
-            fullWidth
+          // Find-tab "Create team" affordance — same pill shape so
+          // the bottom-bar control reads consistently between tabs;
+          // tapping here just switches into the Create tab.
+          <TouchableOpacity
+            activeOpacity={0.85}
             onPress={() => setTab('create')}
-          />
+            accessibilityRole="button"
+            accessibilityLabel={t.teamFinder.createBtn}
+            style={createTeamBtnStyles.btn}
+          >
+            <LinearGradient
+              colors={['#3B5BF5', '#8B3DF5']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={createTeamBtnStyles.fill}
+            >
+              <Text style={createTeamBtnStyles.label}>{t.teamFinder.createBtn}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         )}
       </View>
       </KeyboardSafeView>
@@ -569,13 +618,19 @@ export default function TeamFinderScreen() {
                 </Pressable>
               ))
             )}
-            <Button
-              label={t.teamFinder.cancelBtn}
-              variant="secondary"
-              size="md"
-              fullWidth
+            {/* Modal cancel — md (44pt) full-width secondary
+                (solid cyan) so the only visual emphasis on this
+                modal is the team list above; cancel sits below
+                without competing for attention. */}
+            <TouchableOpacity
+              activeOpacity={0.85}
               onPress={() => setShowInvitePicker(null)}
-            />
+              accessibilityRole="button"
+              accessibilityLabel={t.teamFinder.cancelBtn}
+              style={pickerCancelBtnStyles.btn}
+            >
+              <Text style={pickerCancelBtnStyles.label}>{t.teamFinder.cancelBtn}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -711,12 +766,18 @@ function PlayerRow({
           </View>
         )}
       </View>
-      <Button
-        label={labels.teamFinder.inviteBtn}
-        variant="secondary"
-        size="sm"
+      {/* Player-row invite CTA — sm (38pt) solid cyan secondary
+          so it sits flush against the row's right edge without
+          consuming a disproportionate share of the row width. */}
+      <TouchableOpacity
+        activeOpacity={0.85}
         onPress={onInvite}
-      />
+        accessibilityRole="button"
+        accessibilityLabel={labels.teamFinder.inviteBtn}
+        style={playerInviteBtnStyles.btn}
+      >
+        <Text style={playerInviteBtnStyles.label}>{labels.teamFinder.inviteBtn}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1165,5 +1226,105 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: '#8B95A8',
     marginTop: 2,
+  },
+});
+
+// Inline invite accept/decline pair — sm (38pt) inline pills so the
+// row keeps a single line. Accept = solid cyan secondary; Decline =
+// ghost cyan label without fill.
+const inviteAcceptBtnStyles = StyleSheet.create({
+  btn: {
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: '#00CFFF',
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
+  },
+  label: {
+    color: '#0B0F16',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13,
+    letterSpacing: 0.1,
+  },
+});
+
+const inviteDeclineBtnStyles = StyleSheet.create({
+  btn: {
+    height: 38,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    color: '#00CFFF',
+    fontFamily: Fonts.inter.medium,
+    fontSize: 13,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline bottom-bar create-team CTA — full-width 52pt lg pill.
+// Same shape whether the button kicks off a create call or just
+// switches tabs (the disabled state is what changes).
+const createTeamBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline picker-modal cancel — md (44pt) full-width solid cyan
+// secondary anchored under the team list.
+const pickerCancelBtnStyles = StyleSheet.create({
+  btn: {
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: '#00CFFF',
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+  },
+  label: {
+    color: '#0B0F16',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline per-row invite CTA — sm (38pt) solid cyan so it reads as
+// "the affordance to act on this player" without leaning into the
+// row.
+const playerInviteBtnStyles = StyleSheet.create({
+  btn: {
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: '#00CFFF',
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
+  },
+  label: {
+    color: '#0B0F16',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13,
+    letterSpacing: 0.1,
   },
 });

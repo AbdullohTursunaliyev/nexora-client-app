@@ -17,7 +17,6 @@ import { Images } from '../constants/Images';
 import SimpleHeader from '../components/common/SimpleHeader';
 import StarIcon from '../components/icons/StarIcon';
 import LocationPinIcon from '../components/icons/LocationPinIcon';
-import Button from '../components/common/Button';
 import * as clubsApi from '../lib/api/services/clubs';
 import { getErrorMessage } from '../lib/api/client';
 import type { ClubPreview } from '../lib/api/types';
@@ -170,13 +169,25 @@ export default function ClubPreviewScreen() {
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <Button
-          label={t.clubPreviewScreen.joinBtn}
-          variant="primary"
-          size="lg"
-          fullWidth
+        {/* "Klubga qo'shilish" / "Присоединиться" / "Join the club"
+            CTA — full-width 52pt pill sized for the longer Cyrillic
+            label without truncating. */}
+        <TouchableOpacity
+          activeOpacity={0.85}
           onPress={onJoin}
-        />
+          accessibilityRole="button"
+          accessibilityLabel={t.clubPreviewScreen.joinBtn}
+          style={joinBtnStyles.btn}
+        >
+          <LinearGradient
+            colors={['#3B5BF5', '#8B3DF5']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={joinBtnStyles.fill}
+          >
+            <Text style={joinBtnStyles.label}>{t.clubPreviewScreen.joinBtn}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -233,5 +244,21 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+});
+
+const joinBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

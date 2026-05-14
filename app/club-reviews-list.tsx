@@ -6,6 +6,7 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -14,7 +15,7 @@ import { Fonts } from '../constants/Fonts';
 import { Images } from '../constants/Images';
 import SimpleHeader from '../components/common/SimpleHeader';
 import StarIcon from '../components/icons/StarIcon';
-import Button from '../components/common/Button';
+import { LinearGradient } from 'expo-linear-gradient';
 import MessageCircleIcon from '../components/icons/MessageCircleIcon';
 import { Pencil } from 'lucide-react-native';
 import * as clubsApi from '../lib/api/services/clubs';
@@ -149,21 +150,13 @@ export default function ClubReviewsListScreen() {
 
         {showWriteBtn && (
           <View style={styles.writeBtnWrap}>
-            <Button
-              label={
-                canSubmit
-                  ? t.clubReviewsList.writeBtn
-                  : hoursUntilNextReview != null
-                    ? t.clubReviewsList.writeDisabledIn.replace(
-                        '{n}',
-                        String(hoursUntilNextReview),
-                      )
-                    : t.clubReviewsList.writeBtn
-              }
-              variant={canSubmit ? 'primary' : 'secondary'}
-              size="lg"
-              fullWidth
-              icon={<Pencil size={16} color="#FFFFFF" strokeWidth={2} />}
+            {/* Write-review CTA — switches between primary (gradient,
+                enabled) and disabled (cyan-tinted, with countdown
+                label like "{n} soatdan keyin"). Inline so each
+                state's exact look is tunable without dragging the
+                shared <Button /> variant matrix. */}
+            <TouchableOpacity
+              activeOpacity={0.85}
               disabled={!canSubmit}
               onPress={() =>
                 router.push({
@@ -173,7 +166,36 @@ export default function ClubReviewsListScreen() {
                   },
                 })
               }
-            />
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !canSubmit }}
+              style={writeBtnStyles.btn}
+            >
+              {canSubmit ? (
+                <LinearGradient
+                  colors={['#3B5BF5', '#8B3DF5']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={writeBtnStyles.fill}
+                >
+                  <Pencil size={16} color="#FFFFFF" strokeWidth={2} />
+                  <Text style={writeBtnStyles.labelEnabled}>
+                    {t.clubReviewsList.writeBtn}
+                  </Text>
+                </LinearGradient>
+              ) : (
+                <View style={[writeBtnStyles.fill, writeBtnStyles.fillDisabled]}>
+                  <Pencil size={16} color="#0B0F16" strokeWidth={2} />
+                  <Text style={writeBtnStyles.labelDisabled}>
+                    {hoursUntilNextReview != null
+                      ? t.clubReviewsList.writeDisabledIn.replace(
+                          '{n}',
+                          String(hoursUntilNextReview),
+                        )
+                      : t.clubReviewsList.writeBtn}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         )}
 
@@ -331,4 +353,27 @@ const styles = StyleSheet.create({
   },
   subRatings: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   subRating: { fontFamily: Fonts.inter.medium, fontSize: 11, color: '#8B95A8' },
+});
+
+const writeBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 28,
+  },
+  fillDisabled: { backgroundColor: 'rgba(0, 207, 255, 0.5)' },
+  labelEnabled: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+  },
+  labelDisabled: {
+    color: '#0B0F16',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+  },
 });

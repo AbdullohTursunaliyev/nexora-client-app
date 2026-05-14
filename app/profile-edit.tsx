@@ -18,7 +18,6 @@ import { Camera } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
 import SimpleHeader from '../components/common/SimpleHeader';
-import Button from '../components/common/Button';
 import UserAvatar from '../components/common/UserAvatar';
 import { useAuth } from '../store/AuthProvider';
 import { useToast } from '../components/common/Toast';
@@ -423,14 +422,33 @@ function ProfileEditInner() {
         </ScrollView>
 
         <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <Button
-            label={t.profileEdit.saveBtn}
-            variant="primary"
-            size="lg"
-            fullWidth
-            loading={saving}
+          {/* Save-profile CTA — full-width lg pill matches the rest
+              of the "commit work" buttons (login, club-join, ticket).
+              Spinner-only loading state (no loadingLabel) because
+              the save call is short and a label flash would feel
+              jittery. */}
+          <TouchableOpacity
+            activeOpacity={0.85}
             onPress={onSave}
-          />
+            disabled={saving}
+            accessibilityRole="button"
+            accessibilityLabel={t.profileEdit.saveBtn}
+            accessibilityState={{ disabled: saving, busy: saving }}
+            style={[saveBtnStyles.btn, saving && saveBtnStyles.btnDisabled]}
+          >
+            <LinearGradient
+              colors={['#3B5BF5', '#8B3DF5']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={saveBtnStyles.fill}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={saveBtnStyles.label}>{t.profileEdit.saveBtn}</Text>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </KeyboardSafeView>
     </SafeAreaView>
@@ -541,5 +559,26 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+});
+
+// Inline save-CTA styles — 52pt lg pill flush against the bottom
+// inset. Same shape as the other "commit your changes" buttons.
+const saveBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

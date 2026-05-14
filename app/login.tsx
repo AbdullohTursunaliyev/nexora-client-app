@@ -12,8 +12,10 @@ import {
   Animated,
   LayoutChangeEvent,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Eye, EyeOff } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
@@ -29,7 +31,6 @@ import { useToast } from '../components/common/Toast';
 import { getErrorMessage } from '../lib/api/client';
 import { useT, useLocale } from '../lib/i18n/LocaleProvider';
 import { LOCALE_NATIVE_LABEL, type Locale } from '../lib/i18n/translations';
-import Button from '../components/common/Button';
 
 type Tab = 'login' | 'register';
 
@@ -40,7 +41,9 @@ type Tab = 'login' | 'register';
  * client-side so the user gets immediate feedback before round-trip):
  *
  *   login    → 3-64 chars, alphanumeric + `_`, `-`, `.`
- *   password → 8-255 chars
+ *   password → 3-255 chars  (relaxed from 8 to 3 per product decision —
+ *              low-friction signup; stronger-password upgrade flow is a
+ *              separate follow-up)
  *
  * The earlier phone-based flow was a placeholder — it sent the e164 phone
  * as the `login` field with a hardcoded `"otp"` password, which obviously
@@ -96,9 +99,9 @@ export default function LoginScreen() {
 
   // Mirror backend MobileAuthController validation exactly:
   //   login    regex /^[A-Za-z0-9_\-.]+$/, len 3-64
-  //   password len 8-255
+  //   password len 3-255  (relaxed from 8 → 3)
   const loginValid = /^[A-Za-z0-9_\-.]{3,64}$/.test(loginField);
-  const passwordValid = password.length >= 8 && password.length <= 255;
+  const passwordValid = password.length >= 3 && password.length <= 255;
   const passwordsMatch = !isRegister || password === passwordConfirm;
   const formValid = loginValid && passwordValid && passwordsMatch;
 
@@ -321,16 +324,46 @@ export default function LoginScreen() {
           )}
 
           <View style={styles.primaryWrap}>
-            <Button
-              label={isRegister ? t.login.signupBtn : t.login.continue}
-              loadingLabel={t.login.checkingLabel}
-              variant="primary"
-              size="lg"
-              fullWidth
-              loading={submitting}
-              disabled={!formValid}
+            {/* Inline submit CTA — pre-fix this used the shared
+                <Button /> component which forced a sm/md/lg discrete
+                sizing system on every call site. The login submit
+                wants ONE specific shape (52pt tall, full pill,
+                gradient fill, 16pt internal gap so the spinner and
+                label sit centred), and the same shape never reads
+                quite the same when reused by every other CTA in the
+                app via the same shared component. Inlining lets this
+                button's proportions match exactly what the login
+                layout needs without imposing on anything else. */}
+            <TouchableOpacity
+              activeOpacity={0.85}
               onPress={onSubmit}
-            />
+              disabled={!formValid || submitting}
+              accessibilityRole="button"
+              accessibilityLabel={isRegister ? t.login.signupBtn : t.login.continue}
+              accessibilityState={{ disabled: !formValid || submitting, busy: submitting }}
+              style={[
+                loginStyles.submitBtn,
+                (!formValid || submitting) && loginStyles.submitBtnDisabled,
+              ]}
+            >
+              <LinearGradient
+                colors={['#3B5BF5', '#8B3DF5']}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={loginStyles.submitBtnFill}
+              >
+                {submitting ? (
+                  <>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <Text style={loginStyles.submitBtnText}>{t.login.checkingLabel}</Text>
+                  </>
+                ) : (
+                  <Text style={loginStyles.submitBtnText}>
+                    {isRegister ? t.login.signupBtn : t.login.continue}
+                  </Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.dividerRow}>
@@ -643,5 +676,39 @@ const styles = StyleSheet.create({
     backgroundColor: '#00CFFF',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+});
+
+/**
+ * Inline styles for the submit CTA. Lives in its own StyleSheet
+ * (rather than merged into the main `styles` object) so the button-
+ * specific dimensions are clearly grouped and easy to tweak without
+ * scrolling through the screen's broader layout rules. Pre-fix this
+ * lived inside the shared <Button /> component's `sm/md/lg` sizing
+ * map, which couldn't be tuned for the login screen specifically.
+ */
+const loginStyles = StyleSheet.create({
+  submitBtn: {
+    height: 52,
+    borderRadius: 999,
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+  },
+  submitBtnDisabled: {
+    opacity: 0.5,
+  },
+  submitBtnFill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  submitBtnText: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

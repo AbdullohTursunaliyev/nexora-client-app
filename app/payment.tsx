@@ -7,8 +7,11 @@ import {
   TextInput,
   Pressable,
   Platform,
+  TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
@@ -18,7 +21,6 @@ import GiftIcon from '../components/icons/GiftIcon';
 import WalletIcon from '../components/icons/WalletIcon';
 import LockIcon from '../components/icons/LockIcon';
 import ShieldIcon from '../components/icons/ShieldIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
 import * as pcsApi from '../lib/api/services/pcs';
@@ -475,13 +477,27 @@ export default function PaymentScreen() {
               value={promo}
               onChangeText={setPromo}
             />
-            <Button
-              label={t.payment.promoApply}
-              variant="outline"
-              size="md"
-              disabled={promo.trim().length === 0 || promoApplied}
+            {/* Promo-apply CTA — md outline so it reads as a paired
+                secondary action sitting next to the promo text input.
+                Currently dead behind PROMO_INPUT_ENABLED until the
+                BE validate endpoint ships. */}
+            <TouchableOpacity
+              activeOpacity={0.8}
               onPress={() => setPromoApplied(true)}
-            />
+              disabled={promo.trim().length === 0 || promoApplied}
+              accessibilityRole="button"
+              accessibilityLabel={t.payment.promoApply}
+              accessibilityState={{
+                disabled: promo.trim().length === 0 || promoApplied,
+              }}
+              style={[
+                promoBtnStyles.btn,
+                (promo.trim().length === 0 || promoApplied) &&
+                  promoBtnStyles.btnDisabled,
+              ]}
+            >
+              <Text style={promoBtnStyles.label}>{t.payment.promoApply}</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -587,16 +603,44 @@ export default function PaymentScreen() {
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <Button
-          label={t.payment.confirmBtn}
-          variant="primary"
-          size="lg"
-          fullWidth
-          loading={confirming}
-          disabled={!method || hasInsufficientBalance}
-          icon={<LockIcon size={16} color={Colors.white} />}
+        {/* Confirm-payment CTA — lg pill with leading LockIcon to
+            reinforce "this is the secure commit step". Gated on
+            both a method being picked AND no insufficient-balance
+            warning so the misfire 4xx is impossible. Spinner-only
+            loading (the BE call is fast, label flash would feel
+            jittery on a payment screen). */}
+        <TouchableOpacity
+          activeOpacity={0.85}
           onPress={onConfirm}
-        />
+          disabled={!method || hasInsufficientBalance || confirming}
+          accessibilityRole="button"
+          accessibilityLabel={t.payment.confirmBtn}
+          accessibilityState={{
+            disabled: !method || hasInsufficientBalance || confirming,
+            busy: confirming,
+          }}
+          style={[
+            confirmBtnStyles.btn,
+            (!method || hasInsufficientBalance || confirming) &&
+              confirmBtnStyles.btnDisabled,
+          ]}
+        >
+          <LinearGradient
+            colors={['#3B5BF5', '#8B3DF5']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={confirmBtnStyles.fill}
+          >
+            {confirming ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <LockIcon size={16} color={Colors.white} />
+                <Text style={confirmBtnStyles.label}>{t.payment.confirmBtn}</Text>
+              </>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
         <View style={styles.secureRow}>
           <ShieldIcon size={12} color="#22C55E" />
           <Text style={styles.secureText}>{t.payment.secure}</Text>
@@ -841,5 +885,49 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.inter.regular,
     fontSize: 11.5,
     color: '#8B95A8',
+  },
+});
+
+// Inline promo-apply styles — md (44pt) outline pill so it reads as
+// a paired secondary action beside the text input. Lives behind the
+// PROMO_INPUT_ENABLED gate until the BE endpoint ships.
+const promoBtnStyles = StyleSheet.create({
+  btn: {
+    height: 44,
+    borderRadius: 999,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(0, 207, 255, 0.45)',
+    minWidth: 100,
+  },
+  btnDisabled: { opacity: 0.5 },
+  label: {
+    color: '#00CFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline confirm-payment CTA — 52pt lg pill anchored to bottom bar.
+// LockIcon + label arranged in a 10pt-gap row inside the gradient.
+const confirmBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

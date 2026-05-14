@@ -19,7 +19,6 @@ import WalletIcon from '../components/icons/WalletIcon';
 import CopyIcon from '../components/icons/CopyIcon';
 import NavigationIcon from '../components/icons/NavigationIcon';
 import ShareIcon from '../components/icons/ShareIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
 import { useAuth } from '../store/AuthProvider';
@@ -346,13 +345,26 @@ export default function BookingSuccessScreen() {
         </ScrollView>
 
         <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-          <Button
-            label={t.bookingSuccess.homeBtn}
-            variant="primary"
-            size="lg"
-            fullWidth
+          {/* Home CTA — full-width 52pt pill closes the post-pay
+              celebration screen and drops the user back onto the
+              home tab. No loading state needed (router.replace is
+              synchronous). */}
+          <TouchableOpacity
+            activeOpacity={0.85}
             onPress={() => router.replace('/(tabs)')}
-          />
+            accessibilityRole="button"
+            accessibilityLabel={t.bookingSuccess.homeBtn}
+            style={homeBtnStyles.btn}
+          >
+            <LinearGradient
+              colors={['#3B5BF5', '#8B3DF5']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={homeBtnStyles.fill}
+            >
+              <Text style={homeBtnStyles.label}>{t.bookingSuccess.homeBtn}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </ImageBackground>
     </View>
@@ -500,5 +512,25 @@ const styles = StyleSheet.create({
   bottomBar: {
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+});
+
+// Inline home-CTA styles. lg pill — same shape as the rest of the
+// terminal-state primaries (book success is a one-tap exit).
+const homeBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

@@ -7,6 +7,7 @@ import {
   Image,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { User } from 'lucide-react-native';
@@ -18,7 +19,6 @@ import * as friendsApi from '../lib/api/services/friends';
 import { getErrorMessage } from '../lib/api/client';
 import type { FriendRequest, FriendUser } from '../lib/api/services/friends';
 import MailIcon from '../components/icons/MailIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 
 export default function FriendRequestsScreen() {
@@ -108,18 +108,34 @@ export default function FriendRequestsScreen() {
                   <ActivityIndicator color={Colors.primary} />
                 ) : (
                   <View style={styles.actions}>
-                    <Button
-                      label={t.friendRequests.accept}
-                      variant="secondary"
-                      size="sm"
+                    {/* Accept = solid cyan secondary, sm so it sits
+                        beside the per-row info column without
+                        swallowing the card width. */}
+                    <TouchableOpacity
+                      activeOpacity={0.85}
                       onPress={() => respond(r.id, 'accept')}
-                    />
-                    <Button
-                      label={t.friendRequests.reject}
-                      variant="ghost"
-                      size="sm"
+                      accessibilityRole="button"
+                      accessibilityLabel={t.friendRequests.accept}
+                      style={acceptBtnStyles.btn}
+                    >
+                      <Text style={acceptBtnStyles.label}>
+                        {t.friendRequests.accept}
+                      </Text>
+                    </TouchableOpacity>
+                    {/* Reject = ghost-style cyan label, no fill, so
+                        the destructive secondary action reads as
+                        clearly subordinate to Accept. */}
+                    <TouchableOpacity
+                      activeOpacity={0.7}
                       onPress={() => respond(r.id, 'reject')}
-                    />
+                      accessibilityRole="button"
+                      accessibilityLabel={t.friendRequests.reject}
+                      style={rejectBtnStyles.btn}
+                    >
+                      <Text style={rejectBtnStyles.label}>
+                        {t.friendRequests.reject}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
               </View>
@@ -230,4 +246,42 @@ const styles = StyleSheet.create({
   name: { fontFamily: Fonts.inter.semiBold, fontSize: 13.5, color: Colors.text },
   login: { fontFamily: Fonts.inter.regular, fontSize: 11.5, color: '#8B95A8', marginTop: 2 },
   actions: { flexDirection: 'row', gap: 6 },
+});
+
+// Inline accept/reject pair — sm (38pt) inline pills so the row
+// keeps the avatar + name + actions all on a single line without
+// pushing the card width. Accept uses the solid cyan secondary
+// treatment; Reject is a ghost (no fill) cyan label.
+const acceptBtnStyles = StyleSheet.create({
+  btn: {
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: '#00CFFF',
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
+  },
+  label: {
+    color: '#0B0F16',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13,
+    letterSpacing: 0.1,
+  },
+});
+
+const rejectBtnStyles = StyleSheet.create({
+  btn: {
+    height: 38,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    color: '#00CFFF',
+    fontFamily: Fonts.inter.medium,
+    fontSize: 13,
+    letterSpacing: 0.1,
+  },
 });

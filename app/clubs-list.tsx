@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  ActivityIndicator,
+  RefreshControl,
+  TouchableOpacity,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -7,7 +16,6 @@ import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
 import SimpleHeader from '../components/common/SimpleHeader';
 import ClubCard from '../components/home/ClubCard';
-import Button from '../components/common/Button';
 import PlusIcon from '../components/icons/PlusIcon';
 import { useDiscoverClubs } from '../lib/hooks/useDiscoverClubs';
 import { useT } from '../lib/i18n/LocaleProvider';
@@ -191,13 +199,27 @@ export default function ClubsListScreen() {
           <Text style={styles.emptyTitle}>{t.clubsList.emptyTitle}</Text>
           <Text style={styles.emptySub}>{t.clubsList.emptySub}</Text>
           <View style={styles.emptyBtnWrap}>
-            <Button
-              label={t.clubsList.joinBtn}
-              variant="primary"
-              size="md"
-              icon={<PlusIcon size={16} color="#FFFFFF" />}
+            {/* Empty-state "Join a club" CTA — md (44pt) inline pill
+                with leading plus icon. Compact size matches the
+                empty-card column proportions; full lg would dwarf
+                the centred empty placeholder. */}
+            <TouchableOpacity
+              activeOpacity={0.85}
               onPress={() => router.push('/club-join')}
-            />
+              accessibilityRole="button"
+              accessibilityLabel={t.clubsList.joinBtn}
+              style={joinBtnStyles.btn}
+            >
+              <LinearGradient
+                colors={['#3B5BF5', '#8B3DF5']}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={joinBtnStyles.fill}
+              >
+                <PlusIcon size={16} color="#FFFFFF" />
+                <Text style={joinBtnStyles.label}>{t.clubsList.joinBtn}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </View>
       ) : (
@@ -289,5 +311,27 @@ const styles = StyleSheet.create({
   },
   emptyBtnWrap: {
     marginTop: 8,
+  },
+});
+
+// Inline join-CTA styles — md (44pt) pill with the leading PlusIcon.
+// Tighter horizontal padding than lg (22 vs 28) so the icon+label
+// reads as a compact action chip inside the empty-state card.
+const joinBtnStyles = StyleSheet.create({
+  btn: { height: 44, borderRadius: 999, alignSelf: 'center', overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 22,
+    minWidth: 120,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    letterSpacing: 0.1,
   },
 });

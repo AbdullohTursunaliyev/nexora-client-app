@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,7 +17,6 @@ import { Fonts } from '../constants/Fonts';
 import SimpleHeader from '../components/common/SimpleHeader';
 import QrIcon from '../components/icons/QrIcon';
 import LocationPinIcon from '../components/icons/LocationPinIcon';
-import Button from '../components/common/Button';
 import * as clubsApi from '../lib/api/services/clubs';
 import { useToast } from '../components/common/Toast';
 import { getErrorMessage } from '../lib/api/client';
@@ -232,18 +232,40 @@ export default function ClubJoinScreen() {
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <Button
-          label={t.clubJoin.joinBtn}
-          variant="primary"
-          size="lg"
-          fullWidth
-          loading={loading}
-          // Button-side disable mirrors the BE validation gates —
-          // empty code OR too-short password keep the button
-          // unavailable so the user can't fire a guaranteed 422.
-          disabled={!code.trim() || password.length < PASSWORD_MIN_LENGTH || loading}
+        {/* Inline join CTA — sized for the long "Klubga qo'shilish" /
+            "Присоединиться к клубу" / "Join the club" label so the
+            text never crowds the pill's curvature. Button-side disable
+            mirrors the BE validation gates so the user can't fire a
+            guaranteed 422. */}
+        <TouchableOpacity
+          activeOpacity={0.85}
           onPress={onJoin}
-        />
+          disabled={!code.trim() || password.length < PASSWORD_MIN_LENGTH || loading}
+          accessibilityRole="button"
+          accessibilityLabel={t.clubJoin.joinBtn}
+          accessibilityState={{
+            disabled: !code.trim() || password.length < PASSWORD_MIN_LENGTH || loading,
+            busy: loading,
+          }}
+          style={[
+            joinStyles.btn,
+            (!code.trim() || password.length < PASSWORD_MIN_LENGTH || loading) &&
+              joinStyles.btnDisabled,
+          ]}
+        >
+          <LinearGradient
+            colors={['#3B5BF5', '#8B3DF5']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={joinStyles.btnFill}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={joinStyles.btnText}>{t.clubJoin.joinBtn}</Text>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
       </KeyboardSafeView>
 
@@ -387,5 +409,34 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+});
+
+// Inline join-CTA styles. Pre-fix this went through the shared
+// <Button /> sm/md/lg sizing system; the bottom-bar CTA on this
+// screen wants a fixed 52pt pill with breathing room for the longer
+// "Klubga qo'shilish" / "Присоединиться" labels, which the generic
+// sizing couldn't tune.
+const joinStyles = StyleSheet.create({
+  btn: {
+    height: 52,
+    borderRadius: 999,
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+  },
+  btnDisabled: { opacity: 0.5 },
+  btnFill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  btnText: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

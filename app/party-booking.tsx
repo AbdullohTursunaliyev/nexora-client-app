@@ -17,7 +17,6 @@ import SimpleHeader from '../components/common/SimpleHeader';
 import PartyIcon from '../components/icons/PartyIcon';
 import UsersIcon from '../components/icons/UsersIcon';
 import MonitorIcon from '../components/icons/MonitorIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
 import { useDialog } from '../components/common/AppDialog';
@@ -269,17 +268,39 @@ export default function PartyBookingScreen() {
             <Text style={styles.hintText}>{t.partyBooking.errorMin1Pc}</Text>
           )}
         </View>
-        <Button
-          label={t.partyBooking.bookCta
+        {/* Party-confirm CTA — full lg pill with dynamic label
+            "Bron qilish ({pcs} ta PC, {friends} do'st)". The label
+            varies length significantly with seat count so the lg
+            padding gives breathing room. Gated on canConfirm
+            (>= MIN_SEATS, has tenant, not already submitting). */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={onConfirm}
+          disabled={!canConfirm}
+          accessibilityRole="button"
+          accessibilityLabel={t.partyBooking.bookCta
             .replace('{pcs}', String(selectedIds.length))
             .replace('{friends}', '0')}
-          variant="primary"
-          size="lg"
-          fullWidth
-          disabled={!canConfirm}
-          loading={submitting}
-          onPress={onConfirm}
-        />
+          accessibilityState={{ disabled: !canConfirm, busy: submitting }}
+          style={[bookCtaStyles.btn, !canConfirm && bookCtaStyles.btnDisabled]}
+        >
+          <LinearGradient
+            colors={['#3B5BF5', '#8B3DF5']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={bookCtaStyles.fill}
+          >
+            {submitting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={bookCtaStyles.label}>
+                {t.partyBooking.bookCta
+                  .replace('{pcs}', String(selectedIds.length))
+                  .replace('{friends}', '0')}
+              </Text>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -432,5 +453,28 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: '#8B95A8',
     flex: 1,
+  },
+});
+
+// Inline party-confirm CTA. 52pt lg pill to fit the variable-length
+// "Bron qilish (N PC, M friends)" label across uz/ru/en without
+// wrapping; disabled state mirrors canConfirm so a misfire 422 is
+// impossible.
+const bookCtaStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

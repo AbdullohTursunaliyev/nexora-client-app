@@ -13,10 +13,10 @@ import { router } from 'expo-router';
 import { LogOut } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
+import { LinearGradient } from 'expo-linear-gradient';
 import SimpleHeader from '../components/common/SimpleHeader';
 import LocationPinIcon from '../components/icons/LocationPinIcon';
 import CheckIcon from '../components/icons/CheckIcon';
-import Button from '../components/common/Button';
 import PlusIcon from '../components/icons/PlusIcon';
 import HomeIcon from '../components/icons/HomeIcon';
 import { useAuth } from '../store/AuthProvider';
@@ -262,14 +262,27 @@ export default function ClubsSwitchScreen() {
         )}
 
         <View style={styles.addBtnWrap}>
-          <Button
-            label={t.clubsSwitch.addBtn}
-            variant="primary"
-            size="lg"
-            fullWidth
-            icon={<PlusIcon size={18} color="#FFFFFF" />}
+          {/* "Klub qo'shish" CTA — 52pt pill with leading plus icon.
+              Inline so the icon+label gap (10pt) can be tuned to the
+              specific label length without leaking into other primary
+              buttons. */}
+          <TouchableOpacity
+            activeOpacity={0.85}
             onPress={() => router.push('/club-join')}
-          />
+            accessibilityRole="button"
+            accessibilityLabel={t.clubsSwitch.addBtn}
+            style={addBtnStyles.btn}
+          >
+            <LinearGradient
+              colors={['#3B5BF5', '#8B3DF5']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={addBtnStyles.fill}
+            >
+              <PlusIcon size={18} color="#FFFFFF" />
+              <Text style={addBtnStyles.label}>{t.clubsSwitch.addBtn}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -379,4 +392,22 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(239, 68, 68, 0.2)',
   },
   addBtnWrap: { marginTop: 14 },
+});
+
+const addBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
+  },
 });

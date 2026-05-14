@@ -12,6 +12,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { User } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
@@ -31,7 +32,6 @@ import UsersIcon from '../components/icons/UsersIcon';
 import MailIcon from '../components/icons/MailIcon';
 import SearchIcon from '../components/icons/SearchIcon';
 import ChevronRightIcon from '../components/icons/ChevronRightIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import KeyboardSafeView from '../components/common/KeyboardSafeView';
 
@@ -338,12 +338,19 @@ export default function FriendsListScreen() {
                       {actingIds.has(u.id) ? (
                         <ActivityIndicator color={Colors.primary} />
                       ) : (
-                        <Button
-                          label={t.friends.cancelBtn}
-                          variant="ghost"
-                          size="sm"
+                        // Cancel-outgoing — sm ghost cyan text so the
+                        // destructive "cancel my own pending request"
+                        // sits quietly to the right of the row's
+                        // info column without competing for attention.
+                        <TouchableOpacity
+                          activeOpacity={0.7}
                           onPress={() => onCancelOutgoing(r.id, u.id)}
-                        />
+                          accessibilityRole="button"
+                          accessibilityLabel={t.friends.cancelBtn}
+                          style={cancelBtnStyles.btn}
+                        >
+                          <Text style={cancelBtnStyles.label}>{t.friends.cancelBtn}</Text>
+                        </TouchableOpacity>
                       )}
                     </View>
                   );
@@ -365,12 +372,25 @@ export default function FriendsListScreen() {
                   <UsersIcon size={28} color="#EF4444" />
                 </View>
                 <Text style={styles.emptyTitle}>{loadError}</Text>
-                <Button
-                  label={t.common.retry}
-                  variant="primary"
-                  size="sm"
+                {/* Retry CTA — sm primary so it reads as actionable
+                    inside the error card without dwarfing the
+                    error message above. */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
                   onPress={loadFriends}
-                />
+                  accessibilityRole="button"
+                  accessibilityLabel={t.common.retry}
+                  style={retryBtnStyles.btn}
+                >
+                  <LinearGradient
+                    colors={['#3B5BF5', '#8B3DF5']}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={retryBtnStyles.fill}
+                  >
+                    <Text style={retryBtnStyles.label}>{t.common.retry}</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
             ) : friends.length === 0 ? (
               <View style={styles.emptyCard}>
@@ -394,12 +414,18 @@ export default function FriendsListScreen() {
                     {isActing ? (
                       <ActivityIndicator color={Colors.primary} />
                     ) : (
-                      <Button
-                        label={t.friends.removeBtn}
-                        variant="ghost"
-                        size="sm"
+                      // Remove-friend ghost cyan label — destructive
+                      // action gated by a confirm dialog upstream, so
+                      // the visible affordance stays quiet.
+                      <TouchableOpacity
+                        activeOpacity={0.7}
                         onPress={() => onRemove(u.id, name)}
-                      />
+                        accessibilityRole="button"
+                        accessibilityLabel={t.friends.removeBtn}
+                        style={removeBtnStyles.btn}
+                      >
+                        <Text style={removeBtnStyles.label}>{t.friends.removeBtn}</Text>
+                      </TouchableOpacity>
                     )}
                   </View>
                 );
@@ -605,22 +631,33 @@ function renderActionByStatus(
         </View>
       );
     case 'outgoing':
+      // Cancel-my-pending — sm ghost cyan (matches the Mine-tab
+      // outgoing row treatment).
       return (
-        <Button
-          label={labels.friends.cancelBtn}
-          variant="ghost"
-          size="sm"
+        <TouchableOpacity
+          activeOpacity={0.7}
           onPress={onCancel}
-        />
+          accessibilityRole="button"
+          accessibilityLabel={labels.friends.cancelBtn}
+          style={cancelBtnStyles.btn}
+        >
+          <Text style={cancelBtnStyles.label}>{labels.friends.cancelBtn}</Text>
+        </TouchableOpacity>
       );
     case 'incoming':
+      // Incoming request → Accept reads as solid cyan secondary so
+      // the obviously-good action stands out from the row's quiet
+      // backdrop.
       return (
-        <Button
-          label={labels.friendRequests.accept}
-          variant="secondary"
-          size="sm"
+        <TouchableOpacity
+          activeOpacity={0.85}
           onPress={onAccept}
-        />
+          accessibilityRole="button"
+          accessibilityLabel={labels.friendRequests.accept}
+          style={searchAcceptBtnStyles.btn}
+        >
+          <Text style={searchAcceptBtnStyles.label}>{labels.friendRequests.accept}</Text>
+        </TouchableOpacity>
       );
     case 'blocked':
       return (
@@ -630,13 +667,17 @@ function renderActionByStatus(
       );
     case 'none':
     default:
+      // "Add" CTA on a stranger row — sm solid cyan secondary.
       return (
-        <Button
-          label={labels.friends.addBtn}
-          variant="secondary"
-          size="sm"
+        <TouchableOpacity
+          activeOpacity={0.85}
           onPress={onAdd}
-        />
+          accessibilityRole="button"
+          accessibilityLabel={labels.friends.addBtn}
+          style={addFriendBtnStyles.btn}
+        >
+          <Text style={addFriendBtnStyles.label}>{labels.friends.addBtn}</Text>
+        </TouchableOpacity>
       );
   }
 }
@@ -800,5 +841,106 @@ const styles = StyleSheet.create({
     color: '#8B95A8',
     textAlign: 'center',
     lineHeight: 18,
+  },
+});
+
+// Inline cancel-pending CTA — sm (38pt) ghost cyan label for both
+// the Mine-tab outgoing-row cancel AND the Search-tab outgoing
+// cancel. Same shape so the action reads consistently across the
+// screen's two tabs.
+const cancelBtnStyles = StyleSheet.create({
+  btn: {
+    height: 38,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    color: '#00CFFF',
+    fontFamily: Fonts.inter.medium,
+    fontSize: 13,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline remove-friend ghost cyan. Identical visual to cancel — the
+// confirm dialog upstream makes the destructive nature explicit, so
+// the inline affordance stays quiet.
+const removeBtnStyles = StyleSheet.create({
+  btn: {
+    height: 38,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    color: '#00CFFF',
+    fontFamily: Fonts.inter.medium,
+    fontSize: 13,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline search-tab incoming-accept — sm solid cyan secondary.
+const searchAcceptBtnStyles = StyleSheet.create({
+  btn: {
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: '#00CFFF',
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
+  },
+  label: {
+    color: '#0B0F16',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline search-tab Add — sm solid cyan secondary. Same shape as
+// accept (a "yes, add this user" affordance) so the user sees a
+// consistent affirmative-action chip across the screen.
+const addFriendBtnStyles = StyleSheet.create({
+  btn: {
+    height: 38,
+    borderRadius: 999,
+    backgroundColor: '#00CFFF',
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
+  },
+  label: {
+    color: '#0B0F16',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline retry CTA on the load-error empty card — sm primary
+// gradient so the recovery action stands out without crowding the
+// error message above.
+const retryBtnStyles = StyleSheet.create({
+  btn: { height: 38, borderRadius: 999, overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    minWidth: 80,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13,
+    letterSpacing: 0.1,
   },
 });

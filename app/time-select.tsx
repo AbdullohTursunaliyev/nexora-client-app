@@ -6,8 +6,10 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
@@ -18,7 +20,6 @@ import GiftIcon from '../components/icons/GiftIcon';
 import MoonIcon from '../components/icons/MoonIcon';
 import CrownIcon from '../components/icons/CrownIcon';
 import CalendarIcon from '../components/icons/CalendarIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
 import { getErrorMessage } from '../lib/api/client';
@@ -285,36 +286,46 @@ export default function TimeSelectScreen() {
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <Button
-          label={t.timeSelect.continue}
-          variant="primary"
-          size="lg"
-          fullWidth
-          disabled={!selectedPackage || !selectedTime}
+        {/* Continue CTA — full lg pill. Gated on both a package
+            AND a slot being chosen because forwarding to payment
+            without either leaves a half-built selection downstream.
+            Tap-handler is inline so the route push still has access
+            to the selectedPackage / selectedTime closure values. */}
+        <TouchableOpacity
+          activeOpacity={0.85}
           onPress={() => {
             if (!selectedPackage || !selectedTime) return;
             const durationHours = Math.max(1, Math.round(selectedPackage.duration_min / 60));
             router.push({
               pathname: '/payment',
               params: {
-                // Forward as strings — expo-router only supports
-                // strings; the destination parses with Number(...).
                 packageId: String(selectedPackage.id),
                 packageTitle: selectedPackage.name,
                 priceAmount: String(selectedPackage.price),
                 durationHours: String(durationHours),
                 startTime: selectedTime,
-                // Pass the BE-supplied slot date so payment.tsx
-                // doesn't re-guess "today vs tomorrow" from the
-                // local clock. Falls back to "" when the BE was
-                // offline (slots load failed); payment treats that
-                // as legacy "today + rollover" behaviour. Audit
-                // finding #6.
                 startDate: slotsDate ?? '',
               },
             });
           }}
-        />
+          disabled={!selectedPackage || !selectedTime}
+          accessibilityRole="button"
+          accessibilityLabel={t.timeSelect.continue}
+          accessibilityState={{ disabled: !selectedPackage || !selectedTime }}
+          style={[
+            continueBtnStyles.btn,
+            (!selectedPackage || !selectedTime) && continueBtnStyles.btnDisabled,
+          ]}
+        >
+          <LinearGradient
+            colors={['#3B5BF5', '#8B3DF5']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={continueBtnStyles.fill}
+          >
+            <Text style={continueBtnStyles.label}>{t.timeSelect.continue}</Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -461,5 +472,27 @@ const styles = StyleSheet.create({
     color: '#8B95A8',
     textAlign: 'center',
     lineHeight: 18,
+  },
+});
+
+// Inline continue-CTA styles — 52pt lg pill at the bottom of the
+// booking-flow step. Disabled until BOTH a package and a slot are
+// picked; the booking flow won't make sense without both upstream.
+const continueBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

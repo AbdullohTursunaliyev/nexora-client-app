@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../constants/Colors';
 import { Fonts } from '../../constants/Fonts';
 import { useT } from '../../lib/i18n/LocaleProvider';
-import Button from '../common/Button';
 
 interface Props {
   selectedSeat: string | null;
@@ -49,14 +49,28 @@ export default function SeatBottomBar({
         </View>
       )}
 
-      <Button
-        label={t.seatSelect.continue}
-        variant="primary"
-        size="lg"
-        fullWidth
-        disabled={disabled}
+      {/* Inline Continue CTA — 52pt full-width gradient pill. Pre-fix
+          this used the shared <Button /> at size="lg" + fullWidth; we
+          inline so the seat-select bottom bar's CTA shape stays
+          locally tunable without dragging the rest of the app. */}
+      <TouchableOpacity
+        activeOpacity={0.85}
         onPress={onContinue}
-      />
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={t.seatSelect.continue}
+        accessibilityState={{ disabled }}
+        style={[continueBtnStyles.btn, disabled && continueBtnStyles.btnDisabled]}
+      >
+        <LinearGradient
+          colors={['#3B5BF5', '#8B3DF5']}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={continueBtnStyles.fill}
+        >
+          <Text style={continueBtnStyles.label}>{t.seatSelect.continue}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -121,5 +135,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#00CFFF',
     letterSpacing: 0.2,
+  },
+});
+
+const continueBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

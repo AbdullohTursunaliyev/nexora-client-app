@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Modal,
   Pressable,
+  TouchableOpacity,
   Animated,
   Easing,
   BackHandler,
@@ -20,7 +21,6 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../constants/Colors';
 import { Fonts } from '../../constants/Fonts';
-import Button from './Button';
 import { useT } from '../../lib/i18n/LocaleProvider';
 
 /**
@@ -222,26 +222,52 @@ function DialogShell({
           <Text style={styles.title}>{state.title}</Text>
           {!!state.message && <Text style={styles.message}>{state.message}</Text>}
 
+          {/* Dialog button row — pre-fix used the shared <Button />
+              at size="md" for both halves. Inline so dialog button
+              proportions can be tuned for the modal-card layout
+              specifically (44pt height, equal-flex pair, dialog-
+              specific padding) without dragging the rest of the
+              app. Cancel = solid cyan secondary; Confirm = gradient
+              primary (or red-gradient danger when isDestructive). */}
           <View style={[styles.buttonRow, !state.hasCancel && styles.buttonRowSingle]}>
             {state.hasCancel && (
               <View style={styles.btnFlex}>
-                <Button
-                  label={state.cancelLabel ?? t.common.cancel}
-                  variant="secondary"
-                  size="md"
-                  fullWidth
+                <TouchableOpacity
+                  activeOpacity={0.85}
                   onPress={() => onClose(false)}
-                />
+                  accessibilityRole="button"
+                  accessibilityLabel={state.cancelLabel ?? t.common.cancel}
+                  style={dialogCancelBtnStyles.btn}
+                >
+                  <Text style={dialogCancelBtnStyles.label}>
+                    {state.cancelLabel ?? t.common.cancel}
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
             <View style={styles.btnFlex}>
-              <Button
-                label={state.confirmLabel ?? t.common.ok}
-                variant={isDestructive ? 'danger' : 'primary'}
-                size="md"
-                fullWidth
+              <TouchableOpacity
+                activeOpacity={0.85}
                 onPress={() => onClose(true)}
-              />
+                accessibilityRole="button"
+                accessibilityLabel={state.confirmLabel ?? t.common.ok}
+                style={dialogConfirmBtnStyles.btn}
+              >
+                <LinearGradient
+                  colors={
+                    isDestructive
+                      ? ['#EF4444', '#DC2626']
+                      : ['#3B5BF5', '#8B3DF5']
+                  }
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={dialogConfirmBtnStyles.fill}
+                >
+                  <Text style={dialogConfirmBtnStyles.label}>
+                    {state.confirmLabel ?? t.common.ok}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
           </View>
         </Animated.View>
@@ -312,6 +338,37 @@ const styles = StyleSheet.create({
   },
   btnFlex: {
     flex: 1,
+  },
+});
+
+const dialogCancelBtnStyles = StyleSheet.create({
+  btn: {
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: '#00CFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  label: {
+    color: '#0B0F16',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+  },
+});
+
+const dialogConfirmBtnStyles = StyleSheet.create({
+  btn: { height: 44, borderRadius: 999, overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
   },
 });
 

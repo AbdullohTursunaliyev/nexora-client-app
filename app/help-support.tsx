@@ -28,7 +28,6 @@ import ChevronRightIcon from '../components/icons/ChevronRightIcon';
 import ChevronDownIcon from '../components/icons/ChevronDownIcon';
 import SearchIcon from '../components/icons/SearchIcon';
 import CloseIcon from '../components/icons/CloseIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
 import * as supportApi from '../lib/api/services/support';
@@ -423,15 +422,42 @@ export default function HelpSupportScreen() {
             />
 
             <View style={styles.modalFooter}>
-              <Button
-                label={t.helpSupport.ticketSendBtn}
-                variant="primary"
-                size="lg"
-                fullWidth
-                loading={ticketSubmitting}
-                disabled={ticketSubmitting || ticketMessage.trim().length === 0}
+              {/* Send-ticket CTA — full-width 52pt pill inside the
+                  modal sheet. Disabled until the user types a
+                  message (matches the BE's required-message
+                  validation so we don't fire a guaranteed 422). */}
+              <TouchableOpacity
+                activeOpacity={0.85}
                 onPress={sendTicket}
-              />
+                disabled={ticketSubmitting || ticketMessage.trim().length === 0}
+                accessibilityRole="button"
+                accessibilityLabel={t.helpSupport.ticketSendBtn}
+                accessibilityState={{
+                  disabled:
+                    ticketSubmitting || ticketMessage.trim().length === 0,
+                  busy: ticketSubmitting,
+                }}
+                style={[
+                  sendBtnStyles.btn,
+                  (ticketSubmitting || ticketMessage.trim().length === 0) &&
+                    sendBtnStyles.btnDisabled,
+                ]}
+              >
+                <LinearGradient
+                  colors={['#3B5BF5', '#8B3DF5']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={sendBtnStyles.fill}
+                >
+                  {ticketSubmitting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={sendBtnStyles.label}>
+                      {t.helpSupport.ticketSendBtn}
+                    </Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -689,5 +715,27 @@ const styles = StyleSheet.create({
   },
   modalFooter: {
     marginTop: 14,
+  },
+});
+
+// Inline send-ticket CTA styles. 52pt lg pill matches the rhythm of
+// the primary submit on login / club-join — same shape because both
+// are "final tap to commit work" actions inside a form-shaped surface.
+const sendBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

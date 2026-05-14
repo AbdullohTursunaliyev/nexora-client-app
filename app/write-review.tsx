@@ -6,8 +6,11 @@ import {
   ScrollView,
   TextInput,
   Pressable,
+  TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
@@ -17,7 +20,6 @@ import SparklesIcon from '../components/icons/SparklesIcon';
 import HeartIcon from '../components/icons/HeartIcon';
 import MonitorIcon from '../components/icons/MonitorIcon';
 import GamepadIcon from '../components/icons/GamepadIcon';
-import Button from '../components/common/Button';
 import * as clubsApi from '../lib/api/services/clubs';
 import { useToast } from '../components/common/Toast';
 import { getErrorMessage } from '../lib/api/client';
@@ -178,14 +180,33 @@ export default function WriteReviewScreen() {
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        <Button
-          label={t.writeReview.submitBtn}
-          variant="primary"
-          size="lg"
-          fullWidth
-          loading={submitting}
+        {/* Submit-review CTA — lg pill anchored to bottom bar with
+            spinner-only loading (the call is fast, label flash
+            would feel jittery). The form layer drives error toasts
+            for missing-overall-rating so disabled state isn't
+            needed here. */}
+        <TouchableOpacity
+          activeOpacity={0.85}
           onPress={onSubmit}
-        />
+          disabled={submitting}
+          accessibilityRole="button"
+          accessibilityLabel={t.writeReview.submitBtn}
+          accessibilityState={{ disabled: submitting, busy: submitting }}
+          style={[submitBtnStyles.btn, submitting && submitBtnStyles.btnDisabled]}
+        >
+          <LinearGradient
+            colors={['#3B5BF5', '#8B3DF5']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={submitBtnStyles.fill}
+          >
+            {submitting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={submitBtnStyles.label}>{t.writeReview.submitBtn}</Text>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
       </KeyboardSafeView>
     </SafeAreaView>
@@ -254,5 +275,25 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+});
+
+// Inline submit-review CTA. 52pt lg pill bound to the bottom bar.
+const submitBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

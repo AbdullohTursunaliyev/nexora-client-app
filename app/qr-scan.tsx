@@ -16,12 +16,12 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { X } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
 import SimpleHeader from '../components/common/SimpleHeader';
 import LightningIcon from '../components/icons/LightningIcon';
 import GalleryIcon from '../components/icons/GalleryIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
 import * as pcsApi from '../lib/api/services/pcs';
@@ -279,13 +279,29 @@ export default function QrScanScreen() {
                 {hasClubs ? t.qrScan.noTenantHasClubs : t.qrScan.noTenantNoClubs}
               </Text>
               <View style={styles.gateBtnWrap}>
-                <Button
-                  label={hasClubs ? t.qrScan.pickClubBtn : t.qrScan.joinClubBtn}
-                  variant="primary"
-                  size="md"
-                  fullWidth
+                {/* No-tenant gate CTA — md (44pt) full-width pill
+                    sitting inside the gate-card column. Label
+                    switches between "Klub tanlash" and "Klubga
+                    qo'shilish" depending on whether the user has
+                    any joined clubs. */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
                   onPress={() => router.push(hasClubs ? '/(tabs)/profile' : '/club-join')}
-                />
+                  accessibilityRole="button"
+                  accessibilityLabel={hasClubs ? t.qrScan.pickClubBtn : t.qrScan.joinClubBtn}
+                  style={pickClubBtnStyles.btn}
+                >
+                  <LinearGradient
+                    colors={['#3B5BF5', '#8B3DF5']}
+                    start={{ x: 0, y: 0.5 }}
+                    end={{ x: 1, y: 0.5 }}
+                    style={pickClubBtnStyles.fill}
+                  >
+                    <Text style={pickClubBtnStyles.label}>
+                      {hasClubs ? t.qrScan.pickClubBtn : t.qrScan.joinClubBtn}
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -463,15 +479,37 @@ export default function QrScanScreen() {
             <View
               style={[styles.sheetSubmitWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}
             >
-              <Button
-                label={t.qrScan.manualSubmit}
-                variant="primary"
-                size="lg"
-                fullWidth
-                loading={submitting}
-                disabled={!code.trim() || submitting}
+              {/* Manual-submit CTA — lg full-width pill inside the
+                  bottom sheet. Disabled until the user types
+                  something so the BE never sees an empty payload. */}
+              <TouchableOpacity
+                activeOpacity={0.85}
                 onPress={onManualSubmit}
-              />
+                disabled={!code.trim() || submitting}
+                accessibilityRole="button"
+                accessibilityLabel={t.qrScan.manualSubmit}
+                accessibilityState={{
+                  disabled: !code.trim() || submitting,
+                  busy: submitting,
+                }}
+                style={[
+                  manualSubmitBtnStyles.btn,
+                  (!code.trim() || submitting) && manualSubmitBtnStyles.btnDisabled,
+                ]}
+              >
+                <LinearGradient
+                  colors={['#3B5BF5', '#8B3DF5']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={manualSubmitBtnStyles.fill}
+                >
+                  {submitting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={manualSubmitBtnStyles.label}>{t.qrScan.manualSubmit}</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -754,5 +792,49 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     color: Colors.text,
     lineHeight: 20,
+  },
+});
+
+// Inline pick-club CTA — md (44pt) pill stretched across the gate
+// card. Pre-fix this was a generic <Button size="md" fullWidth />
+// — same shape, just inlined so the gate-card column can tune
+// without touching the shared component.
+const pickClubBtnStyles = StyleSheet.create({
+  btn: { height: 44, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 22,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline manual-submit CTA — 52pt lg pill at the bottom of the
+// manual-entry bottom sheet. Same shape as the other "commit"
+// primaries; sheet-bound layout means we keep alignSelf:'stretch'.
+const manualSubmitBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

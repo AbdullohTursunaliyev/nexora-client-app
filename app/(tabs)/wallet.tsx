@@ -15,7 +15,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { Fonts } from '../../constants/Fonts';
 import HomeHeader from '../../components/home/HomeHeader';
-import Button from '../../components/common/Button';
 import WalletIcon from '../../components/icons/WalletIcon';
 import ChevronDownIcon from '../../components/icons/ChevronDownIcon';
 import CheckIcon from '../../components/icons/CheckIcon';
@@ -134,15 +133,30 @@ export default function WalletScreen() {
           {joinedClubs.length === 0 ? (
             <View style={styles.sheetEmpty}>
               <Text style={styles.sheetEmptyText}>{t.walletScreen.noClubs}</Text>
-              <Button
-                label={t.walletScreen.joinClubBtn}
-                variant="primary"
-                size="md"
+              {/* In-sheet "Join a club" CTA — md (44pt) so it sits
+                  proportionally inside the sheet's empty-state
+                  column without consuming the whole width. */}
+              <TouchableOpacity
+                activeOpacity={0.85}
                 onPress={() => {
                   setPickerOpen(false);
                   router.push('/club-join');
                 }}
-              />
+                accessibilityRole="button"
+                accessibilityLabel={t.walletScreen.joinClubBtn}
+                style={joinClubBtnStyles.btn}
+              >
+                <LinearGradient
+                  colors={['#3B5BF5', '#8B3DF5']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 1, y: 0.5 }}
+                  style={joinClubBtnStyles.fill}
+                >
+                  <Text style={joinClubBtnStyles.label}>
+                    {t.walletScreen.joinClubBtn}
+                  </Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.clubsList}>
@@ -220,13 +234,29 @@ export default function WalletScreen() {
             </View>
             <Text style={styles.emptyTitle}>{t.walletScreen.emptyTitle}</Text>
             <Text style={styles.emptyDescription}>{t.walletScreen.emptyDesc}</Text>
-            <Button
-              label={t.walletScreen.emptyPickBtn}
-              variant="primary"
-              size="lg"
-              fullWidth
+            {/* Empty-state primary CTA — full-width lg pill that
+                opens the club-picker sheet. The link below is the
+                secondary path for users who have NO joined clubs
+                yet (different intent, hence a ghost-style link
+                rather than a second pill). */}
+            <TouchableOpacity
+              activeOpacity={0.85}
               onPress={() => setPickerOpen(true)}
-            />
+              accessibilityRole="button"
+              accessibilityLabel={t.walletScreen.emptyPickBtn}
+              style={emptyPickBtnStyles.btn}
+            >
+              <LinearGradient
+                colors={['#3B5BF5', '#8B3DF5']}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={emptyPickBtnStyles.fill}
+              >
+                <Text style={emptyPickBtnStyles.label}>
+                  {t.walletScreen.emptyPickBtn}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => router.push('/club-join')}
@@ -674,5 +704,47 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.inter.regular,
     fontSize: 13,
     color: '#8B95A8',
+  },
+});
+
+// Inline empty-state pick-club CTA — full-width lg pill anchored
+// to the empty card. Same shape as other "main action on a card"
+// primaries (home/discover empties).
+const emptyPickBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
+  },
+});
+
+// Inline in-sheet join-club CTA — md (44pt) so it doesn't dwarf
+// the sheet's empty-state column.
+const joinClubBtnStyles = StyleSheet.create({
+  btn: { height: 44, borderRadius: 999, overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 22,
+    minWidth: 120,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    letterSpacing: 0.1,
   },
 });

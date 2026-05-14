@@ -25,7 +25,7 @@ import ExpandableDescription from '../components/club/ExpandableDescription';
 import StarIcon from '../components/icons/StarIcon';
 import ChevronRightIcon from '../components/icons/ChevronRightIcon';
 import HomeIcon from '../components/icons/HomeIcon';
-import Button from '../components/common/Button';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useDiscoverClubs } from '../lib/hooks/useDiscoverClubs';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
@@ -148,12 +148,27 @@ export default function ClubDetailsScreen() {
         <Text style={styles.notFoundTitle}>{t.clubDetails.notFoundTitle}</Text>
         <Text style={styles.notFoundSub}>{t.clubDetails.notFoundSub}</Text>
         <View style={styles.notFoundBtnWrap}>
-          <Button
-            label={t.clubDetails.notFoundBtn}
-            variant="primary"
-            size="md"
+          {/* Short "Orqaga" / "Назад" / "Back" label on the
+              not-found state — inline-styled at 44pt so the pill
+              hugs the text and doesn't dwarf the screen's empty
+              card. Compact (not fullWidth) so it sits centred in
+              the error-state column. */}
+          <TouchableOpacity
+            activeOpacity={0.85}
             onPress={() => router.back()}
-          />
+            accessibilityRole="button"
+            accessibilityLabel={t.clubDetails.notFoundBtn}
+            style={notFoundBtnStyles.btn}
+          >
+            <LinearGradient
+              colors={['#3B5BF5', '#8B3DF5']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={notFoundBtnStyles.fill}
+            >
+              <Text style={notFoundBtnStyles.label}>{t.clubDetails.notFoundBtn}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -426,5 +441,21 @@ const styles = StyleSheet.create({
     color: '#8B95A8',
     textAlign: 'center',
     marginBottom: 16,
+  },
+});
+
+const notFoundBtnStyles = StyleSheet.create({
+  btn: { height: 44, borderRadius: 999, alignSelf: 'center', overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    paddingHorizontal: 24,
+    minWidth: 120,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
   },
 });

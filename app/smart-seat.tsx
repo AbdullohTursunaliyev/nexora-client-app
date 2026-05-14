@@ -16,7 +16,6 @@ import SimpleHeader from '../components/common/SimpleHeader';
 import BrainIcon from '../components/icons/BrainIcon';
 import SparklesIcon from '../components/icons/SparklesIcon';
 import MonitorIcon from '../components/icons/MonitorIcon';
-import Button from '../components/common/Button';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
 import { getErrorMessage } from '../lib/api/client';
@@ -225,15 +224,35 @@ export default function SmartSeatScreen() {
         <View
           style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}
         >
-          <Button
-            label={t.smartSeat.holdBtn}
-            variant="primary"
-            size="lg"
-            fullWidth
-            loading={holding && holdingPcId === pick.id}
-            disabled={holding}
+          {/* Hold-pick CTA — full lg pill. Loading state is per-pc
+              (only spins when THIS pc is the one being held) so the
+              alternative chips above can show their own per-chip
+              spinners without all three spinning at once. */}
+          <TouchableOpacity
+            activeOpacity={0.85}
             onPress={() => hold(pick)}
-          />
+            disabled={holding}
+            accessibilityRole="button"
+            accessibilityLabel={t.smartSeat.holdBtn}
+            accessibilityState={{
+              disabled: holding,
+              busy: holding && holdingPcId === pick.id,
+            }}
+            style={[holdBtnStyles.btn, holding && holdBtnStyles.btnDisabled]}
+          >
+            <LinearGradient
+              colors={['#3B5BF5', '#8B3DF5']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={holdBtnStyles.fill}
+            >
+              {holding && holdingPcId === pick.id ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={holdBtnStyles.label}>{t.smartSeat.holdBtn}</Text>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       )}
     </SafeAreaView>
@@ -415,5 +434,25 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+});
+
+// Inline hold-CTA styles — 52pt lg pill anchored to the bottom bar.
+const holdBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.5 },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
+    letterSpacing: 0.1,
   },
 });

@@ -21,7 +21,6 @@ import { getErrorMessage } from '../../lib/api/client';
 import RefreshIcon from '../../components/icons/RefreshIcon';
 import ClockIcon from '../../components/icons/ClockIcon';
 import CheckIcon from '../../components/icons/CheckIcon';
-import Button from '../../components/common/Button';
 import * as bookingsApi from '../../lib/api/services/bookings';
 import * as pcsApi from '../../lib/api/services/pcs';
 
