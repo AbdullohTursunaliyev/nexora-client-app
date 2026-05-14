@@ -178,14 +178,24 @@ export default function ClubReviewsListScreen() {
                   style={writeBtnStyles.fill}
                 >
                   <Pencil size={16} color="#FFFFFF" strokeWidth={2} />
-                  <Text style={writeBtnStyles.labelEnabled}>
+                  <Text
+                    style={writeBtnStyles.labelEnabled}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
                     {t.clubReviewsList.writeBtn}
                   </Text>
                 </LinearGradient>
               ) : (
                 <View style={[writeBtnStyles.fill, writeBtnStyles.fillDisabled]}>
                   <Pencil size={16} color="#0B0F16" strokeWidth={2} />
-                  <Text style={writeBtnStyles.labelDisabled}>
+                  <Text
+                    style={writeBtnStyles.labelDisabled}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
                     {hoursUntilNextReview != null
                       ? t.clubReviewsList.writeDisabledIn.replace(
                           '{n}',

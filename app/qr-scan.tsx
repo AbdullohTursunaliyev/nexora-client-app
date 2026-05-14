@@ -297,7 +297,12 @@ export default function QrScanScreen() {
                     end={{ x: 1, y: 0.5 }}
                     style={pickClubBtnStyles.fill}
                   >
-                    <Text style={pickClubBtnStyles.label}>
+                    <Text
+                      style={pickClubBtnStyles.label}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
                       {hasClubs ? t.qrScan.pickClubBtn : t.qrScan.joinClubBtn}
                     </Text>
                   </LinearGradient>
@@ -506,7 +511,14 @@ export default function QrScanScreen() {
                   {submitting ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={manualSubmitBtnStyles.label}>{t.qrScan.manualSubmit}</Text>
+                    <Text
+                      style={manualSubmitBtnStyles.label}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      {t.qrScan.manualSubmit}
+                    </Text>
                   )}
                 </LinearGradient>
               </TouchableOpacity>

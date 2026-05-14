@@ -249,7 +249,14 @@ export default function SmartSeatScreen() {
               {holding && holdingPcId === pick.id ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Text style={holdBtnStyles.label}>{t.smartSeat.holdBtn}</Text>
+                <Text
+                  style={holdBtnStyles.label}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {t.smartSeat.holdBtn}
+                </Text>
               )}
             </LinearGradient>
           </TouchableOpacity>

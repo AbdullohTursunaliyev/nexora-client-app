@@ -3084,7 +3084,7 @@ export const translations: Record<Locale, Dict> = {
       available: 'Доступно: {n} {unit}',
       full: 'Свободных мест нет',
       pricePerHour: '{price} в час',
-      priceAtClub: 'Цена уточняется в клубе',
+      priceAtClub: 'Цена в клубе',
       recommended: 'Рекомендуем',
       realtimeTitle: 'Обновляется в реальном времени',
       realtimeSub: 'Доступность отображается в реальном времени.',

@@ -152,7 +152,12 @@ export default function WalletScreen() {
                   end={{ x: 1, y: 0.5 }}
                   style={joinClubBtnStyles.fill}
                 >
-                  <Text style={joinClubBtnStyles.label}>
+                  <Text
+                    style={joinClubBtnStyles.label}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
                     {t.walletScreen.joinClubBtn}
                   </Text>
                 </LinearGradient>
@@ -252,7 +257,12 @@ export default function WalletScreen() {
                 end={{ x: 1, y: 0.5 }}
                 style={emptyPickBtnStyles.fill}
               >
-                <Text style={emptyPickBtnStyles.label}>
+                <Text
+                  style={emptyPickBtnStyles.label}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
                   {t.walletScreen.emptyPickBtn}
                 </Text>
               </LinearGradient>

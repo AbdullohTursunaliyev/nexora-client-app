@@ -217,7 +217,14 @@ export default function ClubsListScreen() {
                 style={joinBtnStyles.fill}
               >
                 <PlusIcon size={16} color="#FFFFFF" />
-                <Text style={joinBtnStyles.label}>{t.clubsList.joinBtn}</Text>
+                <Text
+                  style={joinBtnStyles.label}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {t.clubsList.joinBtn}
+                </Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>

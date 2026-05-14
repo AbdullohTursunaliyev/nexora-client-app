@@ -349,7 +349,14 @@ export default function FriendsListScreen() {
                           accessibilityLabel={t.friends.cancelBtn}
                           style={cancelBtnStyles.btn}
                         >
-                          <Text style={cancelBtnStyles.label}>{t.friends.cancelBtn}</Text>
+                          <Text
+                            style={cancelBtnStyles.label}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.85}
+                          >
+                            {t.friends.cancelBtn}
+                          </Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -388,7 +395,14 @@ export default function FriendsListScreen() {
                     end={{ x: 1, y: 0.5 }}
                     style={retryBtnStyles.fill}
                   >
-                    <Text style={retryBtnStyles.label}>{t.common.retry}</Text>
+                    <Text
+                      style={retryBtnStyles.label}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      {t.common.retry}
+                    </Text>
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
@@ -424,7 +438,14 @@ export default function FriendsListScreen() {
                         accessibilityLabel={t.friends.removeBtn}
                         style={removeBtnStyles.btn}
                       >
-                        <Text style={removeBtnStyles.label}>{t.friends.removeBtn}</Text>
+                        <Text
+                          style={removeBtnStyles.label}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.85}
+                        >
+                          {t.friends.removeBtn}
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -641,7 +662,14 @@ function renderActionByStatus(
           accessibilityLabel={labels.friends.cancelBtn}
           style={cancelBtnStyles.btn}
         >
-          <Text style={cancelBtnStyles.label}>{labels.friends.cancelBtn}</Text>
+          <Text
+            style={cancelBtnStyles.label}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
+            {labels.friends.cancelBtn}
+          </Text>
         </TouchableOpacity>
       );
     case 'incoming':
@@ -656,7 +684,14 @@ function renderActionByStatus(
           accessibilityLabel={labels.friendRequests.accept}
           style={searchAcceptBtnStyles.btn}
         >
-          <Text style={searchAcceptBtnStyles.label}>{labels.friendRequests.accept}</Text>
+          <Text
+            style={searchAcceptBtnStyles.label}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
+            {labels.friendRequests.accept}
+          </Text>
         </TouchableOpacity>
       );
     case 'blocked':
@@ -676,7 +711,14 @@ function renderActionByStatus(
           accessibilityLabel={labels.friends.addBtn}
           style={addFriendBtnStyles.btn}
         >
-          <Text style={addFriendBtnStyles.label}>{labels.friends.addBtn}</Text>
+          <Text
+            style={addFriendBtnStyles.label}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
+            {labels.friends.addBtn}
+          </Text>
         </TouchableOpacity>
       );
   }

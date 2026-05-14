@@ -353,7 +353,12 @@ export default function TeamFinderScreen() {
                             accessibilityLabel={t.teamFinder.inviteAccept}
                             style={inviteAcceptBtnStyles.btn}
                           >
-                            <Text style={inviteAcceptBtnStyles.label}>
+                            <Text
+                              style={inviteAcceptBtnStyles.label}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.85}
+                            >
                               {t.teamFinder.inviteAccept}
                             </Text>
                           </TouchableOpacity>
@@ -369,7 +374,12 @@ export default function TeamFinderScreen() {
                             accessibilityLabel={t.teamFinder.inviteDecline}
                             style={inviteDeclineBtnStyles.btn}
                           >
-                            <Text style={inviteDeclineBtnStyles.label}>
+                            <Text
+                              style={inviteDeclineBtnStyles.label}
+                              numberOfLines={1}
+                              adjustsFontSizeToFit
+                              minimumFontScale={0.85}
+                            >
                               {t.teamFinder.inviteDecline}
                             </Text>
                           </TouchableOpacity>
@@ -544,7 +554,14 @@ export default function TeamFinderScreen() {
               {creating ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Text style={createTeamBtnStyles.label}>{t.teamFinder.createBtn}</Text>
+                <Text
+                  style={createTeamBtnStyles.label}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {t.teamFinder.createBtn}
+                </Text>
               )}
             </LinearGradient>
           </TouchableOpacity>
@@ -565,7 +582,14 @@ export default function TeamFinderScreen() {
               end={{ x: 1, y: 0.5 }}
               style={createTeamBtnStyles.fill}
             >
-              <Text style={createTeamBtnStyles.label}>{t.teamFinder.createBtn}</Text>
+              <Text
+                style={createTeamBtnStyles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {t.teamFinder.createBtn}
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
         )}
@@ -629,7 +653,14 @@ export default function TeamFinderScreen() {
               accessibilityLabel={t.teamFinder.cancelBtn}
               style={pickerCancelBtnStyles.btn}
             >
-              <Text style={pickerCancelBtnStyles.label}>{t.teamFinder.cancelBtn}</Text>
+              <Text
+                style={pickerCancelBtnStyles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {t.teamFinder.cancelBtn}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -776,7 +807,14 @@ function PlayerRow({
         accessibilityLabel={labels.teamFinder.inviteBtn}
         style={playerInviteBtnStyles.btn}
       >
-        <Text style={playerInviteBtnStyles.label}>{labels.teamFinder.inviteBtn}</Text>
+        <Text
+          style={playerInviteBtnStyles.label}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.85}
+        >
+          {labels.teamFinder.inviteBtn}
+        </Text>
       </TouchableOpacity>
     </View>
   );

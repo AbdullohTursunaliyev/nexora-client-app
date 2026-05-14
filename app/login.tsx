@@ -355,10 +355,22 @@ export default function LoginScreen() {
                 {submitting ? (
                   <>
                     <ActivityIndicator size="small" color="#FFFFFF" />
-                    <Text style={loginStyles.submitBtnText}>{t.login.checkingLabel}</Text>
+                    <Text
+                      style={loginStyles.submitBtnText}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
+                      {t.login.checkingLabel}
+                    </Text>
                   </>
                 ) : (
-                  <Text style={loginStyles.submitBtnText}>
+                  <Text
+                    style={loginStyles.submitBtnText}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
                     {isRegister ? t.login.signupBtn : t.login.continue}
                   </Text>
                 )}

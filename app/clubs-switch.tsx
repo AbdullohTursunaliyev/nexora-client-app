@@ -280,7 +280,14 @@ export default function ClubsSwitchScreen() {
               style={addBtnStyles.fill}
             >
               <PlusIcon size={18} color="#FFFFFF" />
-              <Text style={addBtnStyles.label}>{t.clubsSwitch.addBtn}</Text>
+              <Text
+                style={addBtnStyles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {t.clubsSwitch.addBtn}
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>

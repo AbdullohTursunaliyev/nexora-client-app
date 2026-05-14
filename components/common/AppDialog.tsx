@@ -239,7 +239,12 @@ function DialogShell({
                   accessibilityLabel={state.cancelLabel ?? t.common.cancel}
                   style={dialogCancelBtnStyles.btn}
                 >
-                  <Text style={dialogCancelBtnStyles.label}>
+                  <Text
+                    style={dialogCancelBtnStyles.label}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
                     {state.cancelLabel ?? t.common.cancel}
                   </Text>
                 </TouchableOpacity>
@@ -263,7 +268,12 @@ function DialogShell({
                   end={{ x: 1, y: 0.5 }}
                   style={dialogConfirmBtnStyles.fill}
                 >
-                  <Text style={dialogConfirmBtnStyles.label}>
+                  <Text
+                    style={dialogConfirmBtnStyles.label}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.85}
+                  >
                     {state.confirmLabel ?? t.common.ok}
                   </Text>
                 </LinearGradient>

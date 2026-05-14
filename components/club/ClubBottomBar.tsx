@@ -69,7 +69,14 @@ export default function ClubBottomBar({
         style={[styles.btnSlot, directionBtnStyles.btn]}
       >
         <NavigationIcon size={16} color="#00CFFF" />
-        <Text style={directionBtnStyles.label}>{t.clubDetails.direction}</Text>
+        <Text
+          style={directionBtnStyles.label}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.85}
+        >
+          {t.clubDetails.direction}
+        </Text>
       </TouchableOpacity>
 
       {/* Book CTA — primary gradient. `loading` flips the label out
@@ -93,7 +100,14 @@ export default function ClubBottomBar({
           {bookLoading ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
           ) : (
-            <Text style={bookBtnStyles.label}>{bookLabel ?? t.clubDetails.book}</Text>
+            <Text
+              style={bookBtnStyles.label}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              {bookLabel ?? t.clubDetails.book}
+            </Text>
           )}
         </LinearGradient>
       </TouchableOpacity>
@@ -123,6 +137,10 @@ const styles = StyleSheet.create({
 });
 
 const directionBtnStyles = StyleSheet.create({
+  // paddingHorizontal trimmed from 18 → 12 so the Russian "Маршрут" + nav
+  // icon and the longer "Забронировать" CTA next to it both fit the 50/50
+  // slot without wrapping. letterSpacing also dropped to 0 — every extra
+  // tracking pixel pushed the Russian past the slot edge at fontSize 15.
   btn: {
     height: 52,
     borderRadius: 999,
@@ -131,14 +149,15 @@ const directionBtnStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 18,
+    gap: 6,
+    paddingHorizontal: 12,
   },
   label: {
     color: '#00CFFF',
     fontFamily: Fonts.inter.semiBold,
     fontSize: 15,
-    letterSpacing: 0.1,
+    letterSpacing: 0,
+    flexShrink: 1,
   },
 });
 
@@ -149,12 +168,12 @@ const bookBtnStyles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 18,
+    paddingHorizontal: 12,
   },
   label: {
     color: '#FFFFFF',
     fontFamily: Fonts.inter.semiBold,
     fontSize: 15,
-    letterSpacing: 0.1,
+    letterSpacing: 0,
   },
 });

@@ -262,7 +262,14 @@ export default function ClubJoinScreen() {
             {loading ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={joinStyles.btnText}>{t.clubJoin.joinBtn}</Text>
+              <Text
+                style={joinStyles.btnText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {t.clubJoin.joinBtn}
+              </Text>
             )}
           </LinearGradient>
         </TouchableOpacity>

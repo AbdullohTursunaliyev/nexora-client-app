@@ -362,7 +362,14 @@ export default function BookingSuccessScreen() {
               end={{ x: 1, y: 0.5 }}
               style={homeBtnStyles.fill}
             >
-              <Text style={homeBtnStyles.label}>{t.bookingSuccess.homeBtn}</Text>
+              <Text
+                style={homeBtnStyles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {t.bookingSuccess.homeBtn}
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>

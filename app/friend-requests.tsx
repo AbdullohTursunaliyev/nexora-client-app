@@ -118,7 +118,12 @@ export default function FriendRequestsScreen() {
                       accessibilityLabel={t.friendRequests.accept}
                       style={acceptBtnStyles.btn}
                     >
-                      <Text style={acceptBtnStyles.label}>
+                      <Text
+                        style={acceptBtnStyles.label}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.85}
+                      >
                         {t.friendRequests.accept}
                       </Text>
                     </TouchableOpacity>
@@ -132,7 +137,12 @@ export default function FriendRequestsScreen() {
                       accessibilityLabel={t.friendRequests.reject}
                       style={rejectBtnStyles.btn}
                     >
-                      <Text style={rejectBtnStyles.label}>
+                      <Text
+                        style={rejectBtnStyles.label}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.85}
+                      >
                         {t.friendRequests.reject}
                       </Text>
                     </TouchableOpacity>

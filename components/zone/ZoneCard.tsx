@@ -105,14 +105,31 @@ export default function ZoneCard({
             </Text>
           </View>
 
+          {/* Bottom row — availability badge on the left, price on the
+              right. Pre-fix the price had `flexShrink: 0`, so when the
+              Russian fallback string "Цена уточняется в клубе" (~22
+              chars) ran alongside an equally-long badge like
+              "Свободных мест нет", the price text refused to shrink
+              and the combined width overflowed the card → text was
+              CLIPPED at the card's `overflow: hidden` edge.
+              Now: badge stays at its intrinsic size (`flexShrink: 0`)
+              and price takes the remaining space (`flex: 1`) with
+              right-aligned ellipsis truncation. */}
           <View style={styles.bottomRow}>
             <View style={[styles.availBadge, isFull && styles.fullBadge]}>
               <View style={[styles.availDot, isFull && styles.fullDot]} />
-              <Text style={[styles.availText, isFull && styles.fullText]}>
+              <Text
+                style={[styles.availText, isFull && styles.fullText]}
+                numberOfLines={1}
+              >
                 {isFull ? fullLabel : availableLabel}
               </Text>
             </View>
-            <Text style={[styles.price, isFull && styles.priceDisabled]} numberOfLines={1}>
+            <Text
+              style={[styles.price, isFull && styles.priceDisabled]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {priceLabel}
             </Text>
           </View>
@@ -226,12 +243,17 @@ const styles = StyleSheet.create({
   fullText: {
     color: '#EF4444',
   },
+  // Price grows to fill remaining row space and right-aligns inside it,
+  // so long Russian fallback copy ("Цена уточняется в клубе") truncates
+  // with an ellipsis instead of overflowing the card. The badge to the
+  // left keeps its intrinsic width via `flexShrink: 0`.
   price: {
     fontFamily: Fonts.inter.bold,
     fontSize: 12.5,
     color: Colors.text,
     letterSpacing: -0.1,
-    flexShrink: 0,
+    flex: 1,
+    textAlign: 'right',
   },
   priceDisabled: {
     color: '#5A6A85',

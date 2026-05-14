@@ -185,7 +185,14 @@ export default function ClubPreviewScreen() {
             end={{ x: 1, y: 0.5 }}
             style={joinBtnStyles.fill}
           >
-            <Text style={joinBtnStyles.label}>{t.clubPreviewScreen.joinBtn}</Text>
+            <Text
+              style={joinBtnStyles.label}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              {t.clubPreviewScreen.joinBtn}
+            </Text>
           </LinearGradient>
         </TouchableOpacity>
       </View>

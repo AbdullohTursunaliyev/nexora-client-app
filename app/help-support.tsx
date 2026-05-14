@@ -447,7 +447,12 @@ export default function HelpSupportScreen() {
                   {ticketSubmitting ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={sendBtnStyles.label}>
+                    <Text
+                      style={sendBtnStyles.label}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                    >
                       {t.helpSupport.ticketSendBtn}
                     </Text>
                   )}

@@ -445,7 +445,14 @@ function ProfileEditInner() {
               {saving ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Text style={saveBtnStyles.label}>{t.profileEdit.saveBtn}</Text>
+                <Text
+                  style={saveBtnStyles.label}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {t.profileEdit.saveBtn}
+                </Text>
               )}
             </LinearGradient>
           </TouchableOpacity>

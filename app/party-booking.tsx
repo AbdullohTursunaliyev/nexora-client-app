@@ -293,7 +293,12 @@ export default function PartyBookingScreen() {
             {submitting ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={bookCtaStyles.label}>
+              <Text
+                style={bookCtaStyles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
                 {t.partyBooking.bookCta
                   .replace('{pcs}', String(selectedIds.length))
                   .replace('{friends}', '0')}

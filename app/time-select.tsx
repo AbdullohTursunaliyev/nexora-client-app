@@ -323,7 +323,14 @@ export default function TimeSelectScreen() {
             end={{ x: 1, y: 0.5 }}
             style={continueBtnStyles.fill}
           >
-            <Text style={continueBtnStyles.label}>{t.timeSelect.continue}</Text>
+            <Text
+              style={continueBtnStyles.label}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              {t.timeSelect.continue}
+            </Text>
           </LinearGradient>
         </TouchableOpacity>
       </View>

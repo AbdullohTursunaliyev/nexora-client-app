@@ -166,7 +166,14 @@ export default function ClubDetailsScreen() {
               end={{ x: 1, y: 0.5 }}
               style={notFoundBtnStyles.fill}
             >
-              <Text style={notFoundBtnStyles.label}>{t.clubDetails.notFoundBtn}</Text>
+              <Text
+                style={notFoundBtnStyles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {t.clubDetails.notFoundBtn}
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>

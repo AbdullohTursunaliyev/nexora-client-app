@@ -68,7 +68,14 @@ export default function SeatBottomBar({
           end={{ x: 1, y: 0.5 }}
           style={continueBtnStyles.fill}
         >
-          <Text style={continueBtnStyles.label}>{t.seatSelect.continue}</Text>
+          <Text
+            style={continueBtnStyles.label}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
+            {t.seatSelect.continue}
+          </Text>
         </LinearGradient>
       </TouchableOpacity>
     </View>

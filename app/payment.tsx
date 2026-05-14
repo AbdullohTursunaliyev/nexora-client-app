@@ -496,7 +496,14 @@ export default function PaymentScreen() {
                   promoBtnStyles.btnDisabled,
               ]}
             >
-              <Text style={promoBtnStyles.label}>{t.payment.promoApply}</Text>
+              <Text
+                style={promoBtnStyles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {t.payment.promoApply}
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -636,7 +643,14 @@ export default function PaymentScreen() {
             ) : (
               <>
                 <LockIcon size={16} color={Colors.white} />
-                <Text style={confirmBtnStyles.label}>{t.payment.confirmBtn}</Text>
+                <Text
+                  style={confirmBtnStyles.label}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {t.payment.confirmBtn}
+                </Text>
               </>
             )}
           </LinearGradient>

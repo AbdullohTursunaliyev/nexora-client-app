@@ -203,7 +203,14 @@ export default function WriteReviewScreen() {
             {submitting ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
-              <Text style={submitBtnStyles.label}>{t.writeReview.submitBtn}</Text>
+              <Text
+                style={submitBtnStyles.label}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {t.writeReview.submitBtn}
+              </Text>
             )}
           </LinearGradient>
         </TouchableOpacity>
