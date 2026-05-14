@@ -29,13 +29,28 @@ interface Props {
  */
 export default function ClubCard({ club }: Props) {
   const t = useT();
-  const subtitle = [
+  // Build the subtitle from real catalog signals. Pre-fix this could
+  // resolve to an empty string for newly-listed clubs (no PC count
+  // configured, no GPS distance because user location not granted,
+  // no PS zone) — and the subtitle <Text> was conditionally rendered
+  // (`{!!subtitle && ...}`), so cards with no signals were SHORTER
+  // than neighbouring cards in the same horizontal carousel. Reported
+  // visually as inconsistent row heights between e.g. "Cyberium" (new
+  // club, empty subtitle) and "Nexora Arena" (full data).
+  //
+  // Now we ALWAYS render the subtitle row, falling back to a
+  // localised "details coming soon" line when no real signals exist.
+  // The line uses the same typography as the populated case so the
+  // card body's vertical rhythm stays identical across all rows.
+  const realSubtitle = [
     club.distanceKm > 0 ? `${club.distanceKm.toFixed(1)} km` : null,
     club.pcCount > 0 ? `${club.pcCount} PC` : null,
     club.hasPSZone ? t.components.clubPsZones : null,
   ]
     .filter(Boolean)
     .join(' · ');
+  const subtitle = realSubtitle || t.components.clubSoonDetails;
+  const subtitleIsFallback = !realSubtitle;
 
   const hasRating = club.rating > 0;
   // Highlight "top rated" by promoting the rating chip — bigger star,
@@ -124,7 +139,17 @@ export default function ClubCard({ club }: Props) {
           )}
         </View>
 
-        {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+        {/* Subtitle row is ALWAYS rendered so card heights stay
+            uniform across the carousel. Tinted lighter when it's the
+            fallback ("details coming soon") to subtly tell the user
+            the data is incomplete rather than misleading them that
+            the club has 0 PCs / 0 distance / no PS zone. */}
+        <Text
+          style={[styles.subtitle, subtitleIsFallback && styles.subtitleFallback]}
+          numberOfLines={1}
+        >
+          {subtitle}
+        </Text>
 
         <View style={styles.highlightRow}>
           <View style={[styles.highlightBadge, { backgroundColor: highlight.bg }]}>
@@ -235,6 +260,17 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.inter.regular,
     fontSize: 12.5,
     color: '#8B95A8',
+    // Reserve at least one line of vertical space even when the
+    // localised fallback string is unusually short — keeps the
+    // total card height consistent across rows in the same carousel.
+    minHeight: 17,
+  },
+  // Lighter / italic-looking tint when the subtitle is the fallback
+  // copy ("details coming soon") rather than real catalog data.
+  // Hints at the missing-data state without screaming.
+  subtitleFallback: {
+    color: '#6B7280',
+    fontStyle: 'italic',
   },
   // Highlight row is always rendered with a fixed height so cards
   // line up vertically regardless of which feature the badge falls

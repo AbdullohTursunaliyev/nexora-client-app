@@ -870,6 +870,15 @@ type Dict = {
     clubPsZones: string;
     club24h: string;
     clubVerified: string;
+    /**
+     * Fallback subtitle text used on club cards when none of the
+     * usual signals (distance / PC count / PS-zone presence) are
+     * available — typical for a newly-listed club that operators
+     * haven't filled in catalog data for yet. Prevents card heights
+     * from jumping between rows where the subtitle row would
+     * otherwise be missing entirely.
+     */
+    clubSoonDetails: string;
     walletBalanceLabel: string;
     walletPointsLabel: string;
     membershipBalance: string;
@@ -2205,6 +2214,7 @@ export const translations: Record<Locale, Dict> = {
       clubPsZones: 'PS zona',
       club24h: '24/7 ochiq',
       clubVerified: '✓ Tasdiqlangan',
+      clubSoonDetails: "Tafsilotlar tez orada",
       walletBalanceLabel: 'Hisob balansingiz',
       walletPointsLabel: 'ball',
       membershipBalance: 'Klubdagi balansingiz',
@@ -3444,6 +3454,7 @@ export const translations: Record<Locale, Dict> = {
       clubPsZones: 'PS зона',
       club24h: '24/7 открыт',
       clubVerified: '✓ Проверен',
+      clubSoonDetails: 'Подробности скоро',
       walletBalanceLabel: 'Ваш баланс',
       walletPointsLabel: 'баллов',
       membershipBalance: 'Баланс в клубе',
@@ -4683,6 +4694,7 @@ export const translations: Record<Locale, Dict> = {
       clubPsZones: 'PS zone',
       club24h: '24/7 open',
       clubVerified: '✓ Verified',
+      clubSoonDetails: 'Details coming soon',
       walletBalanceLabel: 'Your balance',
       walletPointsLabel: 'points',
       membershipBalance: 'Club balance',
