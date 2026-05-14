@@ -12,7 +12,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   LayoutAnimation,
-  UIManager,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -45,16 +44,12 @@ const SUPPORT_PHONE = '+998712005050';
 // uses. Both call BE endpoints that already exist on the API.
 type TicketMode = 'submit' | 'remote';
 
-// Enable LayoutAnimation on Android (iOS is opt-in by default).
-// Used by the FAQ accordion below — pre-Android-13 the experimental
-// flag must be flipped per-app before the first LayoutAnimation call,
-// otherwise the toggle snaps without animating.
-if (
-  Platform.OS === 'android' &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// LayoutAnimation works out of the box on iOS and — under the New
+// Architecture (Fabric) — on Android too. The legacy
+// `UIManager.setLayoutAnimationEnabledExperimental(true)` opt-in was
+// a no-op under New Arch and emitted a Metro warning, so it's been
+// removed. If we ever drop back to the Old Architecture we'll
+// re-introduce it behind a `__DEV__`-gated runtime feature flag.
 
 export default function HelpSupportScreen() {
   const t = useT();

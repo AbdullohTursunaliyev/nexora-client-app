@@ -8,7 +8,6 @@ import {
   RefreshControl,
   LayoutAnimation,
   Platform,
-  UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -53,14 +52,13 @@ import BellIcon from '../../components/icons/BellIcon';
 
 type IconCmp = React.ComponentType<{ size?: number; color?: string }>;
 
-// LayoutAnimation requires explicit opt-in on Android (no-op on iOS
-// where it's enabled by default). Without this the "Tez orada"
-// section expand/collapse would snap-cut on Android instead of
-// smoothly animating its height. Guard so we only call once per
-// module load.
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// LayoutAnimation works out of the box on iOS and — under the New
+// Architecture (Fabric) — on Android too. The legacy
+// `UIManager.setLayoutAnimationEnabledExperimental(true)` opt-in we
+// used here previously is a no-op + emits a Metro warning under New
+// Arch, so it's been removed. If we ever ship the Old Architecture
+// build again we'll re-introduce it behind a `__DEV__`-gated
+// runtime feature flag rather than at module top-level.
 
 // AsyncStorage key for the "Tez orada" section's collapsed state.
 // Default = collapsed; only flipped to expanded when the user taps
