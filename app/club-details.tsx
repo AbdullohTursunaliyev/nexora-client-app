@@ -44,7 +44,19 @@ export default function ClubDetailsScreen() {
   const params = useLocalSearchParams<{ clubId?: string; id?: string }>();
   const requestedId = params.clubId ?? params.id;
   const { clubs, loading: clubsLoading } = useDiscoverClubs();
-  const { currentTenantId, switchClub } = useAuth();
+  const { currentTenantId, switchClub, clubs: memberships } = useAuth();
+
+  // Per-tenant balance + bonus live on the AuthProvider's
+  // `clubs` (ClubMembership list), NOT on the discover-side
+  // MapClub — the discover endpoint is global / unauthenticated and
+  // doesn't carry user-specific financials. Look up the membership
+  // for the club we're displaying so the balance strip shows the
+  // RIGHT club's balance, not whichever tenant happens to be active.
+  // Pre-fix the bar was wired to `club.balance` which was always
+  // undefined → strip never rendered.
+  const activeMembership = requestedId
+    ? memberships.find((m) => String(m.tenant_id) === String(requestedId))
+    : null;
   const [bookLoading, setBookLoading] = useState(false);
   // Pre-fix this fell back to `clubs[0]` when the requested club wasn't
   // in the discover list — which silently rendered an unrelated club's
@@ -300,7 +312,18 @@ export default function ClubDetailsScreen() {
 
         <View style={styles.body}>
           <ClubInfo club={club} />
-          {club.joined && club.balance != null && <MembershipBar balance={club.balance} />}
+          {/* Membership balance strip — sourced from AuthProvider's
+              memberships list (the only place per-tenant balance +
+              bonus actually live). Renders only when the user IS a
+              member of this specific club, even if they're currently
+              switched to a different tenant. */}
+          {club.joined && activeMembership != null && (
+            <MembershipBar
+              balance={activeMembership.balance}
+              bonus={activeMembership.bonus}
+              clubName={club.name}
+            />
+          )}
 
           {/* Section order — industry-standard "venue detail" pattern.
               Cross-referenced against Airbnb, Google Maps, Foursquare,
