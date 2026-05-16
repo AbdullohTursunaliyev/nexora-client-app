@@ -72,23 +72,22 @@ export default function ClubPreviewScreen() {
   }, [tenantId, t, dialog]);
 
   /**
-   * Always route to /club-join when the user taps "Join".
-   *
-   * Pre-fix this screen tried to silently call `joinByCode(code)`
-   * when a code was already in the route params — but the BE
-   * requires a `password` field too, and this screen has no input
-   * for it. Every silent-join attempt 422'd with "The password
-   * field is required" and the user saw a generic error dialog
-   * with no way to act.
-   *
-   * Routing to /club-join (the dedicated form) lets the user enter
-   * the code + password together. We forward the prefilled code as
-   * a route param so they don't have to re-type it.
+   * Route to /club-join with the tenant identity in tow. The new
+   * phone-auth flow doesn't need an invite code — the user proves
+   * identity via OTP at app login, and at the join screen picks
+   * their own per-club login + password. Tenant id (and name, for
+   * the header) ride along as route params so the join screen
+   * doesn't need to re-fetch the preview just to show "Join
+   * <club name>".
    */
   const onJoin = () => {
+    if (!tenantId) return;
     router.push({
       pathname: '/club-join',
-      params: code ? { code: String(code) } : {},
+      params: {
+        tenantId: String(tenantId),
+        tenantName: club?.name ?? '',
+      },
     });
   };
 

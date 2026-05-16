@@ -83,8 +83,10 @@ export function usePermissionGate(): PermissionGate {
       });
       if (!userAgreed) return 'denied';
 
-      // Step 2: hand off to the OS. This is the only call that surfaces
-      // the system prompt — and only after we've explained the use.
+      // Step 2: hand off to the OS. AppDialog resolves its promise
+      // only after the iOS UIKit Modal dismissal transition completes
+      // (via Modal's onDismiss), so the OS permission prompt presents
+      // cleanly without racing with the in-flight modal stack.
       const osStatus = await askOS();
       if (osStatus === 'granted') return 'granted';
 

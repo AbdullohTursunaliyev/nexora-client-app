@@ -19,74 +19,120 @@ import { useSelectedZone } from '../lib/state/useSelectedZone';
 import * as pcsApi from '../lib/api/services/pcs';
 import type { Pc } from '../lib/api/types';
 
-interface Zone {
-  id: string;
-  available: number;
-  /**
-   * Hourly price in the tenant's currency. Null when the BE has no
-   * per-zone price configured for this tenant — the UI then renders
-   * "Set at club" instead of inventing a fallback number. Audit
-   * finding #9.
-   */
-  pricePerHour: number | null;
-  imageUri: string;
-  isRoom: boolean;
-}
-
 const formatPrice = (n: number) => n.toLocaleString('ru-RU').replace(/,/g, ' ');
 
-// Group raw PCs from the API into the 3 logical zones the UI expects.
-// The backend returns flat list of PCs with optional zone_id/zone_name.
-function groupZones(pcs: Pc[]): Record<'pc' | 'vip' | 'ps5', { available: number; price: number }> {
-  const byKey: Record<string, { available: number; price: number }> = {
-    pc: { available: 0, price: 0 },
-    vip: { available: 0, price: 0 },
-    ps5: { available: 0, price: 0 },
-  };
-  for (const p of pcs) {
-    const name = (p.zone_name ?? '').toLowerCase();
-    let key: 'pc' | 'vip' | 'ps5' = 'pc';
-    if (/vip/.test(name)) key = 'vip';
-    else if (/ps|playstation|console/.test(name)) key = 'ps5';
-    if (p.status === 'free') byKey[key].available += 1;
-    if (p.price_per_hour && byKey[key].price === 0) {
-      byKey[key].price = Number(p.price_per_hour);
-    }
-  }
-  return byKey;
+/**
+ * Pick the closest brand-aligned visual template for an operator-named
+ * zone. The BE returns the zone name as the operator typed it — we
+ * don't force a fixed taxonomy, but we DO want the card image and
+ * sub-copy to match the type of seat the user is about to book.
+ * Anything that doesn't look like VIP or PS lands on the generic PC
+ * look, which is the right default for the vast majority of zones.
+ */
+function categorizeZone(name: string): 'vip' | 'ps5' | 'pc' {
+  const lower = name.toLowerCase();
+  if (/vip|люкс/.test(lower)) return 'vip';
+  if (/ps|playstation|console|пс/.test(lower)) return 'ps5';
+  return 'pc';
 }
 
+interface ZoneAggregate {
+  /** Real BE zone id, stringified for `useSelectedZone` compat. */
+  id: string;
+  beId: number;
+  title: string;
+  available: number;
+  /** Hourly price from BE. Null when operator hasn't configured one. */
+  pricePerHour: number | null;
+  category: 'vip' | 'ps5' | 'pc';
+}
+
+/**
+ * Group a flat PC list into per-zone aggregates. Uses the real
+ * `zone_id` / `zone_name` from each PC (now flattened from BE's
+ * nested `zone: {...}` shape by the listPcs adapter) so every
+ * operator-defined zone shows up regardless of name — including
+ * tenants that didn't use the FE's old pc/vip/ps5 naming convention.
+ *
+ * PCs without a zone are filed under a synthetic "Default" zone with
+ * id 0 so they aren't lost — this matches the BE catalog which
+ * substitutes 'Default' for `zoneRel === null`.
+ */
+function groupByZone(pcs: Pc[]): ZoneAggregate[] {
+  const buckets = new Map<
+    number,
+    { name: string; available: number; price: number }
+  >();
+  for (const p of pcs) {
+    const id = typeof p.zone_id === 'number' ? p.zone_id : 0;
+    const name = (p.zone_name || '').trim() || 'Default';
+    const slot = buckets.get(id) ?? { name, available: 0, price: 0 };
+    if (p.status === 'free') slot.available += 1;
+    // Price per zone: take the first non-zero price we see. The BE
+    // returns the same price for every PC in a zone (per the
+    // `pc.zoneRel.price_per_hour` join), so we only need one sample.
+    if (slot.price === 0 && p.price_per_hour && p.price_per_hour > 0) {
+      slot.price = Number(p.price_per_hour);
+    }
+    buckets.set(id, slot);
+  }
+  const out: ZoneAggregate[] = [];
+  for (const [id, slot] of buckets) {
+    out.push({
+      id: String(id),
+      beId: id,
+      title: slot.name,
+      available: slot.available,
+      pricePerHour: slot.price > 0 ? slot.price : null,
+      category: categorizeZone(slot.name),
+    });
+  }
+  return out;
+}
+
+/**
+ * Zone / poisk step of the booking flow.
+ *
+ * Pre-fix this rendered three hardcoded buckets ('pc' / 'vip' / 'ps5')
+ * and grouped PCs into them via a regex on `zone_name`. Two
+ * compounding bugs broke this for almost every tenant:
+ *
+ *   1. The `listPcs` adapter cast the BE wire shape directly without
+ *      flattening — `zone_name` and `price_per_hour` were nested
+ *      under `zone: {...}` server-side but advertised as flat on the
+ *      `Pc` type, so every PC's zone metadata read as undefined at
+ *      runtime and ALL PCs collapsed into the 'pc' default bucket.
+ *   2. The three hardcoded buckets forced operators to use specific
+ *      zone names. A tenant with zones named "STANDART" / "BUS" /
+ *      "DINO" (real example from a customer report) would see
+ *      everything under "PC" because none of those match
+ *      vip / ps / playstation / console.
+ *
+ * Now the adapter populates the flat zone fields (services/pcs.ts)
+ * and this screen renders one card per *real* `zone_id` — name comes
+ * from the operator's input, image / sub-copy come from the closest
+ * brand template. Downstream screens get the numeric zone id via
+ * `setBeZoneId` so seat-select doesn't have to re-derive it.
+ */
 export default function ZoneSelectScreen() {
   const t = useT();
   const toast = useToast();
-  const { zoneId, select } = useSelectedZone();
+  const { zoneId, select, setBeZoneId } = useSelectedZone();
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [grouped, setGrouped] = useState<ReturnType<typeof groupZones> | null>(null);
+  const [aggregates, setAggregates] = useState<ZoneAggregate[] | null>(null);
 
   const loadZones = useCallback(
     async (force = false) => {
       try {
-        // `force: true` bypasses the 30s pcs cache on pull-to-refresh,
-        // otherwise we share a cached result across the booking flow.
         const list = await pcsApi.listPcs({ force });
-        setGrouped(groupZones(list));
+        setAggregates(groupByZone(list));
       } catch (e) {
-        // Backend unavailable — render zones with `available: 0` so the
-        // user sees the empty-state cards instead of fake "48 PCs free"
-        // capacity. The shape stays non-null so the loading skeleton
-        // doesn't reappear; the cards just sit at zero until the next
-        // pull-to-refresh succeeds.
-        //
-        // ALSO surface a toast so the user knows the zeros mean
-        // "couldn't reach the server" vs "every zone is genuinely
-        // full". Pre-fix the silent catch left the user staring at
-        // 0/0/0 with no way to distinguish those cases.
-        setGrouped({
-          pc: { available: 0, price: 0 },
-          vip: { available: 0, price: 0 },
-          ps5: { available: 0, price: 0 },
-        });
+        // Backend unreachable — surface an empty list (renders the
+        // "no zones configured" empty card) plus a toast so the user
+        // can distinguish "club hasn't set it up" from "we can't
+        // reach the server".
+        setAggregates([]);
         toast.error(getErrorMessage(e));
       }
     },
@@ -98,70 +144,54 @@ export default function ZoneSelectScreen() {
     loadZones().finally(() => setLoading(false));
   }, [loadZones]);
 
-  // Availability + price come ONLY from the live `groupZones()` result.
-  // Pre-fix the `?? 48` / `?? 12` / `?? 8` fallbacks invented fake
-  // capacity numbers whenever `listPcs()` failed or returned an empty
-  // list, so a tenant with zero PCs would still show "48 free PCs"
-  // and book the user onto a non-existent seat.
-  //
-  // Price: pre-fix this fell back to 20k/35k/25k zone catalogue prices
-  // when the BE returned 0 — but "the BE doesn't have a per-zone price
-  // configured for this tenant" is operationally distinct from "we know
-  // the price is 20 000 so'm". Inventing a number meant the user saw a
-  // price the operator had never set, and could be surprised at the
-  // till. `pricePerHour: null` now indicates "no price configured" so
-  // the UI can render "Set at club" instead. Audit finding #9.
-  const zones: (Zone & {
-    title: string;
-    description: string;
-    unit: string;
-    pricePerHour: number | null;
-  })[] = useMemo(
-    () => [
-      {
-        id: 'pc',
-        title: t.zoneSelect.pcZone,
-        description: t.zoneSelect.pcZoneDesc,
-        available: grouped?.pc.available ?? 0,
-        pricePerHour: grouped && grouped.pc.price > 0 ? grouped.pc.price : null,
-        imageUri: Images.zones.pc,
-        isRoom: false,
-        unit: t.zoneSelect.seatUnit,
-      },
-      {
-        id: 'vip',
-        title: t.zoneSelect.vipZone,
-        description: t.zoneSelect.vipZoneDesc,
-        available: grouped?.vip.available ?? 0,
-        pricePerHour: grouped && grouped.vip.price > 0 ? grouped.vip.price : null,
-        imageUri: Images.zones.vip,
-        isRoom: false,
-        unit: t.zoneSelect.seatUnit,
-      },
-      {
-        id: 'ps5',
-        title: t.zoneSelect.psZone,
-        description: t.zoneSelect.psZoneDesc,
-        available: grouped?.ps5.available ?? 0,
-        pricePerHour: grouped && grouped.ps5.price > 0 ? grouped.ps5.price : null,
-        imageUri: Images.zones.ps5,
-        isRoom: true,
-        unit: t.zoneSelect.roomUnit,
-      },
-    ],
-    [t, grouped],
+  // Decorate each aggregate with its display strings + image. Done
+  // here (not in groupByZone) so the i18n hook reactivity stays
+  // intact when the user switches language mid-screen.
+  const zoneCards = useMemo(
+    () =>
+      (aggregates ?? []).map((zone) => {
+        const description =
+          zone.category === 'vip'
+            ? t.zoneSelect.vipZoneDesc
+            : zone.category === 'ps5'
+            ? t.zoneSelect.psZoneDesc
+            : t.zoneSelect.pcZoneDesc;
+        const unit =
+          zone.category === 'ps5'
+            ? t.zoneSelect.roomUnit
+            : t.zoneSelect.seatUnit;
+        return {
+          ...zone,
+          description,
+          unit,
+          imageUri: Images.zones[zone.category],
+        };
+      }),
+    [aggregates, t],
   );
 
-  // Sort by availability (highest first), but keep stable order for equal counts
+  // Sort by availability — highest first. Stable sort preserves
+  // insertion order for equal counts (Map iteration honours BE order).
   const sorted = useMemo(
-    () => [...zones].sort((a, b) => b.available - a.available),
-    [zones],
+    () => [...zoneCards].sort((a, b) => b.available - a.available),
+    [zoneCards],
   );
 
-  const onZonePress = (id: string) => {
-    select(id);
-    router.push('/seat-select');
-  };
+  const onZonePress = useCallback(
+    (id: string, beId: number, name: string) => {
+      // Pass the operator-set name through alongside the id so the
+      // downstream seat-select / time-select headers can show
+      // "STANDART" / "BUS" instead of falling back to the generic
+      // "PC зона" copy while their own data is in flight.
+      select(id, name);
+      // Capture the BE numeric id immediately so time-select's
+      // pricing-window fetch doesn't have to wait for seat-select to
+      // resolve it via heuristic.
+      setBeZoneId(beId);
+      router.push('/seat-select');
+    },
+    [select, setBeZoneId],
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -234,7 +264,7 @@ export default function ZoneSelectScreen() {
                   priceLabel={priceLabel}
                   imageUri={zone.imageUri}
                   selected={zone.id === zoneId}
-                  onPress={() => onZonePress(zone.id)}
+                  onPress={() => onZonePress(zone.id, zone.beId, zone.title)}
                 />
               </FadeInView>
             );

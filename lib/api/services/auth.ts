@@ -1,9 +1,6 @@
 import { apiGet, apiPost, tokens } from '../client';
 import type {
   ApiResource,
-  LoginBody,
-  RegisterBody,
-  MobileAuthResponse,
   MobileUser,
   ClubMembership,
   SaveProfileBody,
@@ -11,8 +8,15 @@ import type {
 } from '../types';
 
 /**
- * Mobile Authentication Service
- * Endpoint prefix: /mobile/auth/*
+ * Mobile Authentication Service — post-login operations only.
+ *
+ * The login/register entry points moved to `phoneAuth.ts` when the
+ * mobile app switched to phone + 4-digit OTP auth. The endpoints
+ * `/mobile/auth/login` and `/mobile/auth/register` are still mounted
+ * on the BE for older app builds in the field but the FE no longer
+ * calls them — all new sessions go through phone-auth. This file
+ * keeps the calls every authenticated session still uses (`me`,
+ * `profile`, `switchClub`, `logout`, etc.).
  */
 
 interface MeResponse {
@@ -29,20 +33,6 @@ interface UploadAvatarResponse {
   ok?: boolean;
   user?: MobileUser;
   url?: string;
-}
-
-/** Yangi foydalanuvchi ro'yxatdan o'tkazish */
-export async function register(body: RegisterBody): Promise<MobileAuthResponse> {
-  const res = await apiPost<ApiResource<MobileAuthResponse>>('/mobile/auth/register', body);
-  await tokens.setMobileToken(res.data.token);
-  return res.data;
-}
-
-/** Login (login + parol) */
-export async function login(body: LoginBody): Promise<MobileAuthResponse> {
-  const res = await apiPost<ApiResource<MobileAuthResponse>>('/mobile/auth/login', body);
-  await tokens.setMobileToken(res.data.token);
-  return res.data;
 }
 
 /** Joriy foydalanuvchi ma'lumotlari */

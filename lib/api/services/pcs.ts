@@ -44,9 +44,46 @@ export function invalidatePcsCache(): void {
 authEvents.on('auth:unauthorized', invalidatePcsCache);
 authEvents.on('auth:logout', invalidatePcsCache);
 
+/**
+ * Wire shape of one PC item in `GET /mobile/pcs`. The BE nests the
+ * zone metadata under a `zone` object — our flat `Pc` type advertises
+ * `zone_id` / `zone_name` / `price_per_hour` at the top level, so
+ * without an adapter every consumer reads these as `undefined` at
+ * runtime. That bug silently broke the zone-select grouping (every
+ * PC fell into the default bucket because `zone_name` was undefined)
+ * and the active-session price calculations. The adapter below
+ * flattens this shape into the FE's `Pc` interface.
+ */
+interface RawPcItem {
+  id: number;
+  name?: string;
+  code?: string;
+  status: Pc['status'];
+  zone?: { id?: number | null; name?: string; price_per_hour?: number };
+  booking?: Pc['booking'];
+  can_book?: boolean;
+  can_unbook?: boolean;
+  ip_address?: string;
+}
+
 interface ListPcsResponse {
-  pcs: Pc[];
+  pcs: RawPcItem[];
   zones?: { id: number; name: string }[];
+}
+
+function adaptPc(raw: RawPcItem): Pc {
+  return {
+    id: raw.id,
+    code: raw.code ?? raw.name ?? '',
+    zone_id: raw.zone?.id ?? null,
+    zone_name: raw.zone?.name ?? '',
+    price_per_hour: raw.zone?.price_per_hour ?? 0,
+    status: raw.status,
+    ip_address: raw.ip_address,
+    booking: raw.booking ?? null,
+    can_book: raw.can_book,
+    can_unbook: raw.can_unbook,
+  };
 }
 
 export interface PcGridCell {
@@ -242,7 +279,8 @@ export async function listPcs(opts?: { force?: boolean }): Promise<Pc[]> {
   inflight = (async () => {
     try {
       const res = await apiGet<ApiResource<ListPcsResponse>>('/mobile/pcs');
-      cachedPcs = res.data.pcs ?? [];
+      const raw = res.data.pcs ?? [];
+      cachedPcs = raw.map(adaptPc);
       cachedAt = Date.now();
       return cachedPcs;
     } finally {

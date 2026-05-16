@@ -15,10 +15,6 @@ import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
 import { Images } from '../constants/Images';
 import SimpleHeader from '../components/common/SimpleHeader';
-import PlusIcon from '../components/icons/PlusIcon';
-import LightningIcon from '../components/icons/LightningIcon';
-import PlusCircleIcon from '../components/icons/PlusCircleIcon';
-import SwitchIcon from '../components/icons/SwitchIcon';
 import StopIcon from '../components/icons/StopIcon';
 import ChevronRightIcon from '../components/icons/ChevronRightIcon';
 import GamepadIcon from '../components/icons/GamepadIcon';
@@ -293,20 +289,6 @@ export default function ActiveSessionScreen() {
 
         <Text style={styles.sectionTitle}>{t.activeSession.quickActions}</Text>
 
-        <ActionRow
-          Icon={LightningIcon}
-          color="#F59E0B"
-          label={t.activeSession.extend}
-          onPress={() => router.push('/zone-switch')}
-        />
-        {/* "Add balance" action hidden — same wallet-topup soon
-            gate as the `+` button above. */}
-        <ActionRow
-          Icon={SwitchIcon}
-          color="#7C3AED"
-          label={t.activeSession.switchZone}
-          onPress={() => router.push('/zone-switch')}
-        />
         <ActionRow
           Icon={StopIcon}
           color="#EF4444"

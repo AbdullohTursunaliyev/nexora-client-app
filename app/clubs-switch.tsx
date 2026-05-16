@@ -268,7 +268,13 @@ export default function ClubsSwitchScreen() {
               buttons. */}
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={() => router.push('/club-join')}
+            // Generic "+ Add club" CTA has no tenant context, so
+            // bounce through Discover where the user picks a club
+            // whose preview will pass the tenantId into the
+            // register screen. /club-join with no params shows its
+            // own "pick a club first" empty state, but Discover is
+            // the more direct path.
+            onPress={() => router.push('/(tabs)/discover')}
             accessibilityRole="button"
             accessibilityLabel={t.clubsSwitch.addBtn}
             style={addBtnStyles.btn}

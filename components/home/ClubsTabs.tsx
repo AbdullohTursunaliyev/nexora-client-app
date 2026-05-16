@@ -181,7 +181,13 @@ export default function ClubsTabs({ loading = false }: Props) {
               <Text style={styles.emptySub}>{t.home.emptySub}</Text>
               <TouchableOpacity
                 style={styles.emptyBtn}
-                onPress={() => router.push('/club-join')}
+                // Skip /club-join's "pick a club first" interstitial —
+                // we know the user has no clubs at all from this
+                // branch, so send them straight to Discover where
+                // they can browse + tap into a specific club's
+                // preview (which carries tenantId into the join
+                // screen).
+                onPress={() => router.push('/(tabs)/discover')}
                 activeOpacity={0.85}
                 accessibilityRole="button"
                 accessibilityLabel={t.home.emptyBtn}

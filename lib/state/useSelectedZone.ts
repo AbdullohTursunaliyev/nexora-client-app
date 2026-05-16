@@ -45,6 +45,16 @@ let currentZoneId: string | null = null;
  * free-text name heuristics.
  */
 let currentBeZoneId: number | null = null;
+/**
+ * Display name of the zone the user picked at zone-select. Carries
+ * through to seat-select / time-select so the screen title reads the
+ * operator-set name ("STANDART", "BUS", "VIP корнер") even while
+ * `getPcGrid()` is in flight or returns an empty layout for that
+ * zone. Pre-fix the title fell back to the hardcoded "PC зона" copy
+ * which read as broken when the user had clearly picked a different
+ * zone upstream.
+ */
+let currentZoneName: string | null = null;
 let storageHydrated = false;
 const listeners = new Set<() => void>();
 
@@ -85,6 +95,7 @@ async function hydrateOnce(): Promise<void> {
 export function resetSelectedZone(): void {
   currentZoneId = null;
   currentBeZoneId = null;
+  currentZoneName = null;
   notify();
   // Best-effort wipe; failures here are silent (storage unavailable
   // shouldn't block navigation).
@@ -116,11 +127,15 @@ export function useSelectedZone() {
     };
   }, []);
 
-  const select = useCallback(async (id: string) => {
+  const select = useCallback(async (id: string, name?: string | null) => {
     currentZoneId = id;
     // New zone category picked — invalidate any previously-resolved
     // BE id so seat-select re-resolves against the new bucket.
     currentBeZoneId = null;
+    // Optional name pass-through: zone-select now hands us the
+    // operator-set zone name so downstream screens can render it as
+    // the title without waiting for the grid fetch.
+    currentZoneName = name ?? null;
     notify();
     try {
       await AsyncStorage.setItem(STORAGE_KEY, id);
@@ -145,6 +160,7 @@ export function useSelectedZone() {
   const clear = useCallback(async () => {
     currentZoneId = null;
     currentBeZoneId = null;
+    currentZoneName = null;
     notify();
     try {
       await AsyncStorage.removeItem(STORAGE_KEY);
@@ -155,6 +171,8 @@ export function useSelectedZone() {
     zoneId: currentZoneId,
     /** BE numeric zone id when known. See module-level docblock. */
     beZoneId: currentBeZoneId,
+    /** Operator-set zone name when known. See module-level docblock. */
+    zoneName: currentZoneName,
     select,
     setBeZoneId,
     clear,

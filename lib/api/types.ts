@@ -95,19 +95,6 @@ export interface SaveProfileBody {
   avatar_url?: string | null;
 }
 
-/** Login body */
-export interface LoginBody {
-  login: string;
-  password: string;
-}
-
-/** Register body */
-export interface RegisterBody {
-  login: string;
-  password: string;
-  password_confirmation: string;
-}
-
 /** Club preview / join */
 export interface ClubPreview {
   tenant_id: number;

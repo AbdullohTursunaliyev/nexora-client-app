@@ -183,6 +183,18 @@ const CLIENT_AUTH_PREFIXES = [
   // session — bouncing the user back to /login the moment the home
   // tab tries to load promotions.
   '/mobile/promotions',
+  // Added 2026-05-17: the booking-flow data sources are mounted
+  // inside the `client.auth` group in routes/api.php:893-897 —
+  // /mobile/packages (MobileBookingController::packages) and
+  // /mobile/booking/slots (MobileBookingController::slots) both
+  // need the tenant-scoped token. Pre-fix the FE sent the
+  // mobile_token because they didn't match any prefix, BE 401'd,
+  // and the response interceptor's "dead mobile session" path
+  // logged the user out the moment they walked from seat-select to
+  // time-select. Symptom: tapped a seat → logged out → had to
+  // re-login → home empty until pull-to-refresh.
+  '/mobile/packages',
+  '/mobile/booking/slots',
 ];
 
 function needsClientToken(url: string): boolean {

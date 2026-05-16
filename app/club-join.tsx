@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useState } from 'react';
+import { useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,6 @@ import { Eye, EyeOff } from 'lucide-react-native';
 import { Colors } from '../constants/Colors';
 import { Fonts } from '../constants/Fonts';
 import SimpleHeader from '../components/common/SimpleHeader';
-import QrIcon from '../components/icons/QrIcon';
 import LocationPinIcon from '../components/icons/LocationPinIcon';
 import * as clubsApi from '../lib/api/services/clubs';
 import { useToast } from '../components/common/Toast';
@@ -24,84 +23,65 @@ import { useT } from '../lib/i18n/LocaleProvider';
 import { useAuth } from '../store/AuthProvider';
 import KeyboardSafeView from '../components/common/KeyboardSafeView';
 
-// BE enforces min 8 chars on the per-club password (see
-// MobileClubController::joinByCode validator). Mirroring on the
-// FE saves the user a round-trip with a useless 422 toast.
-const PASSWORD_MIN_LENGTH = 8;
+// BE enforces these floors (see MobileClubController::registerAtClub).
+// Mirroring on the FE saves a useless 422 round-trip and gives the
+// user immediate inline feedback.
+//
+// Password min length dropped from 8 → 4 on operator request — the
+// per-club password is what the user types on the kiosk PC at the
+// cashier; 8 chars was friction without proportional security value
+// (the operator already gates physical access to the seat).
+const LOGIN_MIN_LENGTH = 3;
+const PASSWORD_MIN_LENGTH = 4;
+const LOGIN_ALLOWED_RE = /^[A-Za-z0-9_\-.]+$/;
 
-// Lazy-load the camera scanner — same Expo Go module-load defence
-// as in qr-scan.tsx. expo-camera triggers a native bridge call at
-// import time which crashes Expo Go if the bundle traverses this
-// file eagerly.
-const QrScannerModal = lazy(() => import('../components/qr/QrScannerModal'));
-
+/**
+ * Club registration screen (phone-auth flow).
+ *
+ * The legacy invite-code flow asked the user for a tenant-wide join
+ * code + password. With phone-auth we already know who the user is
+ * (the OTP at app login proved phone ownership), and operators
+ * don't want to mint invite codes for every customer. The new flow:
+ *
+ *   1. User taps "Join" on a club preview → lands here with the
+ *      tenant id + name in route params.
+ *   2. User picks their own per-club login + password.
+ *   3. POST /mobile/club/register pairs (tenant_id, login, password,
+ *      phone) into a Client row. If an operator-pre-created row with
+ *      a matching phone already exists at the tenant, the BE claims
+ *      it (preserves existing balance / bonus) instead of inserting
+ *      a duplicate.
+ *
+ * Without tenant context (somebody navigated here directly from a
+ * generic "+ Add club" button), we show an empty state pointing
+ * them at Discover — joining an unknown club doesn't have a sane
+ * default tenant.
+ */
 export default function ClubJoinScreen() {
   const t = useT();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { refreshMe } = useAuth();
-  // Prefilled code from the discover-preview screen — when the
-  // user taps "Join" on a club-preview that already has a code in
-  // its route params, we land here with the same code so they
-  // don't have to retype it.
-  const params = useLocalSearchParams<{ code?: string }>();
-  const [code, setCode] = useState(() =>
-    typeof params.code === 'string' ? params.code.toUpperCase() : '',
-  );
+  const params = useLocalSearchParams<{ tenantId?: string; tenantName?: string }>();
+  const tenantId = (() => {
+    const raw = typeof params.tenantId === 'string' ? params.tenantId : '';
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })();
+  const tenantName = typeof params.tenantName === 'string' ? params.tenantName : '';
+
+  const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [scannerOpen, setScannerOpen] = useState(false);
 
-  /**
-   * Parse a scanned QR into a join code. Two formats we accept:
-   *   • Raw code string  — "NEX12345" — just trim and use.
-   *   • URL form         — "nexora://join?code=NEX12345" — extract.
-   *
-   * Anything else (whitespace, blank) returns null so the user gets
-   * the same "code is empty" error path as a missed text-input submit.
-   */
-  const parseJoinQr = (raw: string): string | null => {
-    const text = raw.trim();
-    if (!text) return null;
-    try {
-      const u = new URL(text);
-      const param = u.searchParams.get('code');
-      if (param && param.trim()) return param.trim().toUpperCase();
-    } catch {
-      // Not a URL — fall through to raw form.
-    }
-    return text.toUpperCase();
-  };
-
-  /**
-   * Scanner callback — fills the code input. We DON'T auto-submit
-   * because the user still needs to enter a password; scanning is
-   * just a shortcut for typing the 8-12 char join code.
-   *
-   * Pre-fix this used `setTimeout(() => doJoin(parsed), 0)` to
-   * bypass the closure-stale-state issue of submitting from inside
-   * onChangeText. Now that password is mandatory, the auto-submit
-   * was always going to fail anyway — better UX is to set the code
-   * and let the user focus the password field.
-   */
-  const onScanned = useCallback(
-    (raw: string) => {
-      const parsed = parseJoinQr(raw);
-      if (!parsed) {
-        toast.error(t.clubJoin.errorEmpty);
-        return;
-      }
-      setCode(parsed);
-      toast.info(t.clubJoin.scannedFillPasswordHint);
-    },
-    [toast, t],
-  );
-
-  const onJoin = async () => {
-    const trimmedCode = code.trim();
-    if (!trimmedCode) {
-      toast.error(t.clubJoin.errorEmpty);
+  const onSubmit = async () => {
+    if (!tenantId) return;
+    const trimmed = login.trim();
+    if (trimmed.length < LOGIN_MIN_LENGTH || !LOGIN_ALLOWED_RE.test(trimmed)) {
+      toast.error(
+        t.clubJoin.errorLoginShape.replace('{n}', String(LOGIN_MIN_LENGTH)),
+      );
       return;
     }
     if (password.length < PASSWORD_MIN_LENGTH) {
@@ -112,18 +92,14 @@ export default function ClubJoinScreen() {
     }
     setLoading(true);
     try {
-      await clubsApi.joinByCode(trimmedCode, password);
-      // Re-fetch the user's membership list BEFORE navigating home —
-      // otherwise AuthProvider.clubs still has the pre-join state and
-      // the home tab renders without the just-joined club. The user
-      // had to fully restart the app to see it (reported as P0 bug in
-      // the pre-deploy audit). `refreshMe()` calls /auth/me which
-      // surfaces the new ClubMembership row.
+      await clubsApi.registerAtClub(tenantId, trimmed, password);
+      // Re-fetch the user's membership list BEFORE navigating away
+      // so the home tab renders the just-joined club without a cold
+      // restart. /auth/me populates AuthProvider.clubs.
       try {
         await refreshMe();
       } catch {
-        // /auth/me failure shouldn't block the user from leaving the
-        // screen — they'll see the new club on next focus refresh.
+        // Non-fatal; next focus refresh will pick it up.
       }
       toast.success(t.clubJoin.successToast);
       router.replace('/(tabs)');
@@ -134,157 +110,168 @@ export default function ClubJoinScreen() {
     }
   };
 
+  const canSubmit =
+    !!tenantId &&
+    login.trim().length >= LOGIN_MIN_LENGTH &&
+    LOGIN_ALLOWED_RE.test(login.trim()) &&
+    password.length >= PASSWORD_MIN_LENGTH &&
+    !loading;
+
+  // No tenant context → empty state. Sends the user back to Discover
+  // where they can pick a real club.
+  if (!tenantId) {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <SimpleHeader title={t.clubJoin.headerTitle} />
+        <View style={styles.center}>
+          <Text style={styles.emptyEmoji}>🔎</Text>
+          <Text style={styles.emptyTitle}>{t.clubJoin.pickClubTitle}</Text>
+          <Text style={styles.emptySub}>{t.clubJoin.pickClubSub}</Text>
+          <TouchableOpacity
+            style={styles.emptyCta}
+            activeOpacity={0.85}
+            onPress={() => router.replace('/(tabs)/discover')}
+          >
+            <LinearGradient
+              colors={['#3B5BF5', '#8B3DF5']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.emptyCtaFill}
+            >
+              <Text style={styles.emptyCtaText}>{t.clubJoin.pickClubBtn}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <KeyboardSafeView>
-      <SimpleHeader title={t.clubJoin.headerTitle} />
+        <SimpleHeader title={t.clubJoin.headerTitle} />
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.heroIcon}>
-          <LinearGradient
-            colors={['#00CFFF', '#7C3AED']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.heroIconRing}
-          >
-            <View style={styles.heroIconInner}>
-              <LocationPinIcon size={36} color="#00CFFF" />
-            </View>
-          </LinearGradient>
-        </View>
-
-        <Text style={styles.title}>{t.clubJoin.title}</Text>
-        <Text style={styles.subtitle}>{t.clubJoin.subtitle}</Text>
-
-        <View style={styles.inputCard}>
-          <TextInput
-            style={styles.input}
-            placeholder={t.clubJoin.placeholder}
-            placeholderTextColor="#6B7280"
-            value={code}
-            onChangeText={(c) => setCode(c.toUpperCase())}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            maxLength={32}
-            returnKeyType="next"
-          />
-        </View>
-
-        <TouchableOpacity
-          activeOpacity={0.7}
-          style={styles.qrAlt}
-          onPress={() => setScannerOpen(true)}
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
         >
-          <QrIcon size={18} color="#00CFFF" />
-          <Text style={styles.qrAltText}>{t.clubJoin.qrAlt}</Text>
-        </TouchableOpacity>
+          <View style={styles.heroIcon}>
+            <LinearGradient
+              colors={['#00CFFF', '#7C3AED']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.heroIconRing}
+            >
+              <View style={styles.heroIconInner}>
+                <LocationPinIcon size={36} color="#00CFFF" />
+              </View>
+            </LinearGradient>
+          </View>
 
-        {/* Per-club password — the BE enforces this on join (was
-            SEC-H7: nullable password let attackers create rows
-            with `password IS NULL` and silently link to anyone
-            else's login). Show/hide toggle is the convention for
-            sign-up flows so the user can verify they typed it
-            correctly before commit. */}
-        <View style={styles.passwordLabel}>
-          <Text style={styles.passwordLabelText}>{t.clubJoin.passwordLabel}</Text>
-        </View>
-        <View style={styles.passwordWrap}>
-          <TextInput
-            style={styles.passwordInput}
-            placeholder={t.clubJoin.passwordPlaceholder.replace(
-              '{n}',
-              String(PASSWORD_MIN_LENGTH),
-            )}
-            placeholderTextColor="#6B7280"
-            value={password}
-            onChangeText={setPassword}
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry={!passwordVisible}
-            textContentType="password"
-            maxLength={64}
-            returnKeyType="go"
-            onSubmitEditing={onJoin}
-          />
+          <Text style={styles.title}>
+            {tenantName
+              ? t.clubJoin.titleForClub.replace('{club}', tenantName)
+              : t.clubJoin.title}
+          </Text>
+          <Text style={styles.subtitle}>{t.clubJoin.subtitle}</Text>
+
+          <Text style={styles.fieldLabel}>{t.clubJoin.loginLabel}</Text>
+          <View style={styles.fieldWrap}>
+            <TextInput
+              style={styles.input}
+              placeholder={t.clubJoin.loginPlaceholder}
+              placeholderTextColor="#6B7280"
+              value={login}
+              onChangeText={setLogin}
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={64}
+              returnKeyType="next"
+            />
+          </View>
+          <Text style={styles.fieldHint}>{t.clubJoin.loginHint}</Text>
+
+          <Text style={[styles.fieldLabel, styles.labelGap]}>
+            {t.clubJoin.passwordLabel}
+          </Text>
+          <View style={styles.fieldWrap}>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              placeholder={t.clubJoin.passwordPlaceholder.replace(
+                '{n}',
+                String(PASSWORD_MIN_LENGTH),
+              )}
+              placeholderTextColor="#6B7280"
+              value={password}
+              onChangeText={setPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry={!passwordVisible}
+              textContentType="newPassword"
+              maxLength={64}
+              returnKeyType="go"
+              onSubmitEditing={canSubmit ? onSubmit : undefined}
+            />
+            <TouchableOpacity
+              onPress={() => setPasswordVisible((v) => !v)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                passwordVisible ? t.clubJoin.passwordHide : t.clubJoin.passwordShow
+              }
+            >
+              {passwordVisible ? (
+                <EyeOff size={18} color="#8B95A8" />
+              ) : (
+                <Eye size={18} color="#8B95A8" />
+              )}
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.fieldHint}>
+            {t.clubJoin.passwordHint.replace('{n}', String(PASSWORD_MIN_LENGTH))}
+          </Text>
+
+          <View style={styles.helpCard}>
+            <Text style={styles.helpTitle}>{t.clubJoin.helpTitle}</Text>
+            <Text style={styles.helpText}>{t.clubJoin.helpText}</Text>
+          </View>
+        </ScrollView>
+
+        <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <TouchableOpacity
-            onPress={() => setPasswordVisible((v) => !v)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.85}
+            onPress={onSubmit}
+            disabled={!canSubmit}
             accessibilityRole="button"
-            accessibilityLabel={
-              passwordVisible ? t.clubJoin.passwordHide : t.clubJoin.passwordShow
-            }
+            accessibilityLabel={t.clubJoin.joinBtn}
+            accessibilityState={{ disabled: !canSubmit, busy: loading }}
+            style={[joinStyles.btn, !canSubmit && joinStyles.btnDisabled]}
           >
-            {passwordVisible ? (
-              <EyeOff size={18} color="#8B95A8" />
-            ) : (
-              <Eye size={18} color="#8B95A8" />
-            )}
+            <LinearGradient
+              colors={canSubmit ? ['#3B5BF5', '#8B3DF5'] : ['#2A3142', '#2A3142']}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={joinStyles.btnFill}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text
+                  style={[
+                    joinStyles.btnText,
+                    !canSubmit && joinStyles.btnTextMuted,
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  {t.clubJoin.joinBtn}
+                </Text>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
         </View>
-        <Text style={styles.passwordHint}>
-          {t.clubJoin.passwordHint.replace('{n}', String(PASSWORD_MIN_LENGTH))}
-        </Text>
-
-        <View style={styles.helpCard}>
-          <Text style={styles.helpTitle}>{t.clubJoin.helpTitle}</Text>
-          <Text style={styles.helpText}>{t.clubJoin.helpText}</Text>
-        </View>
-      </ScrollView>
-
-      <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        {/* Inline join CTA — sized for the long "Klubga qo'shilish" /
-            "Присоединиться к клубу" / "Join the club" label so the
-            text never crowds the pill's curvature. Button-side disable
-            mirrors the BE validation gates so the user can't fire a
-            guaranteed 422. */}
-        <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={onJoin}
-          disabled={!code.trim() || password.length < PASSWORD_MIN_LENGTH || loading}
-          accessibilityRole="button"
-          accessibilityLabel={t.clubJoin.joinBtn}
-          accessibilityState={{
-            disabled: !code.trim() || password.length < PASSWORD_MIN_LENGTH || loading,
-            busy: loading,
-          }}
-          style={[
-            joinStyles.btn,
-            (!code.trim() || password.length < PASSWORD_MIN_LENGTH || loading) &&
-              joinStyles.btnDisabled,
-          ]}
-        >
-          <LinearGradient
-            colors={['#3B5BF5', '#8B3DF5']}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={joinStyles.btnFill}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text
-                style={joinStyles.btnText}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
-              >
-                {t.clubJoin.joinBtn}
-              </Text>
-            )}
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
       </KeyboardSafeView>
-
-      <Suspense fallback={null}>
-        {scannerOpen && (
-          <QrScannerModal
-            visible={scannerOpen}
-            onClose={() => setScannerOpen(false)}
-            onScan={onScanned}
-          />
-        )}
-      </Suspense>
     </SafeAreaView>
   );
 }
@@ -292,6 +279,30 @@ export default function ClubJoinScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   scroll: { paddingHorizontal: 16, paddingBottom: 16, alignItems: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
+  emptyEmoji: { fontSize: 40, marginBottom: 10 },
+  emptyTitle: {
+    fontFamily: Fonts.inter.bold,
+    fontSize: 18,
+    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  emptySub: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 13.5,
+    color: '#8B95A8',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 22,
+  },
+  emptyCta: { height: 48, borderRadius: 999, overflow: 'hidden', alignSelf: 'stretch' },
+  emptyCtaFill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyCtaText: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 14,
+    color: '#FFFFFF',
+  },
   heroIcon: { marginTop: 12, marginBottom: 16 },
   heroIconRing: { width: 90, height: 90, borderRadius: 45, padding: 3 },
   heroIconInner: {
@@ -317,52 +328,17 @@ const styles = StyleSheet.create({
     color: '#8B95A8',
     textAlign: 'center',
     marginTop: 8,
-    marginBottom: 24,
+    marginBottom: 22,
   },
-  inputCard: {
+  fieldLabel: {
     width: '100%',
-    backgroundColor: '#141823',
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    height: 60,
-    borderWidth: 1.5,
-    borderColor: 'rgba(0, 207, 255, 0.25)',
-    justifyContent: 'center',
-  },
-  input: {
-    fontFamily: Fonts.orbitron.bold,
-    fontSize: 18,
-    color: Colors.text,
-    letterSpacing: 2,
-    textAlign: 'center',
-    paddingVertical: 0,
-  },
-  qrAlt: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    marginTop: 10,
-  },
-  qrAltText: {
-    fontFamily: Fonts.inter.medium,
-    fontSize: 13,
-    color: '#00CFFF',
-  },
-  // Password label — sits above the input field so the user
-  // understands which credential we're asking for (per-club, not
-  // their mobile-auth login password).
-  passwordLabel: {
-    width: '100%',
-    marginTop: 14,
-    marginBottom: 6,
-  },
-  passwordLabelText: {
     fontFamily: Fonts.inter.medium,
     fontSize: 12.5,
     color: '#8B95A8',
+    marginBottom: 6,
   },
-  passwordWrap: {
+  labelGap: { marginTop: 14 },
+  fieldWrap: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
@@ -374,14 +350,15 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.06)',
     gap: 10,
   },
-  passwordInput: {
+  input: {
     flex: 1,
     fontFamily: Fonts.inter.regular,
     fontSize: 14,
     color: Colors.text,
     paddingVertical: 0,
   },
-  passwordHint: {
+  passwordInput: {},
+  fieldHint: {
     width: '100%',
     fontFamily: Fonts.inter.regular,
     fontSize: 11.5,
@@ -394,7 +371,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 207, 255, 0.06)',
     borderRadius: 12,
     padding: 14,
-    marginTop: 14,
+    marginTop: 18,
     borderWidth: 1,
     borderColor: 'rgba(0, 207, 255, 0.15)',
   },
@@ -419,19 +396,9 @@ const styles = StyleSheet.create({
   },
 });
 
-// Inline join-CTA styles. Pre-fix this went through the shared
-// <Button /> sm/md/lg sizing system; the bottom-bar CTA on this
-// screen wants a fixed 52pt pill with breathing room for the longer
-// "Klubga qo'shilish" / "Присоединиться" labels, which the generic
-// sizing couldn't tune.
 const joinStyles = StyleSheet.create({
-  btn: {
-    height: 52,
-    borderRadius: 999,
-    alignSelf: 'stretch',
-    overflow: 'hidden',
-  },
-  btnDisabled: { opacity: 0.5 },
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  btnDisabled: { opacity: 0.6 },
   btnFill: {
     flex: 1,
     flexDirection: 'row',
@@ -446,4 +413,5 @@ const joinStyles = StyleSheet.create({
     fontSize: 15,
     letterSpacing: 0.1,
   },
+  btnTextMuted: { color: '#5A6A85' },
 });

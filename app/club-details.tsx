@@ -137,6 +137,72 @@ export default function ClubDetailsScreen() {
       }
     : baseClub;
 
+  /**
+   * Smart "Book" handler — fixes the cross-club bug where booking
+   * from a non-active-tenant club page used the user's CURRENT
+   * tenant's PCs / balance instead of the displayed club's.
+   *
+   * Decision tree:
+   *   1. NOT joined          → /club-join directly (button label
+   *                            already says "Klubga qo'shilish",
+   *                            no confirm dialog needed — the CTA
+   *                            itself is unambiguous).
+   *   2. Joined, NOT active  → switchClub(thisClub) → /zone-select
+   *   3. Joined and active   → /zone-select directly
+   *
+   * Also wipes the in-memory booking selections (zone, seat) before
+   * navigating — switching tenants means the old picks belong to the
+   * wrong club and would silently corrupt the flow.
+   *
+   * Declared BEFORE the `if (!club)` early return so React sees the
+   * same hook call order on every render — pre-fix this useCallback
+   * lived below the early return, so the first render with null
+   * club had fewer hooks than later renders and React's
+   * "Rendered fewer hooks than expected" runtime guard threw.
+   */
+  const onBook = useCallback(async () => {
+    if (!club) return;
+    const numericClubId = Number(club.id);
+    if (!Number.isFinite(numericClubId)) return;
+
+    if (!club.joined) {
+      router.push({
+        pathname: '/club-join',
+        params: {
+          tenantId: String(numericClubId),
+          tenantName: club.name ?? '',
+        },
+      });
+      return;
+    }
+
+    clearBookingSelections();
+
+    if (currentTenantId !== numericClubId) {
+      setBookLoading(true);
+      try {
+        toast.info(t.clubDetails.switchingClubToast);
+        await switchClub(numericClubId);
+      } catch (e) {
+        toast.error(getErrorMessage(e));
+        setBookLoading(false);
+        return;
+      } finally {
+        setBookLoading(false);
+      }
+    }
+
+    router.push('/zone-select');
+  }, [
+    club?.id,
+    club?.joined,
+    club?.name,
+    currentTenantId,
+    switchClub,
+    toast,
+    t,
+  ]);
+
   if (!club) {
     // Loading shell: discover hook is still fetching the first page.
     // Without this gate the notFound card flashes on every entrance
@@ -222,62 +288,10 @@ export default function ClubDetailsScreen() {
     Linking.openURL(url).catch((e) => toast.error(getErrorMessage(e)));
   };
 
-  /**
-   * Smart "Book" handler — fixes the cross-club bug where booking
-   * from a non-active-tenant club page used the user's CURRENT
-   * tenant's PCs / balance instead of the displayed club's.
-   *
-   * Decision tree:
-   *   1. NOT joined          → /club-join directly (button label
-   *                            already says "Klubga qo'shilish",
-   *                            no confirm dialog needed — the CTA
-   *                            itself is unambiguous).
-   *   2. Joined, NOT active  → switchClub(thisClub) → /zone-select
-   *   3. Joined and active   → /zone-select directly
-   *
-   * Also wipes the in-memory booking selections (zone, seat) before
-   * navigating — switching tenants means the old picks belong to the
-   * wrong club and would silently corrupt the flow.
-   */
-  const onBook = useCallback(async () => {
-    const numericClubId = Number(club.id);
-    if (!Number.isFinite(numericClubId)) return;
-
-    // Path 1: user isn't a member yet — go straight to join. The
-    // button label is already "Klubga qo'shilish" so there's no
-    // ambiguity to disambiguate via a confirmation dialog.
-    if (!club.joined) {
-      router.push('/club-join');
-      return;
-    }
-
-    // Path 2 / 3: joined club. Drop stale booking state regardless,
-    // then switch tenant if needed.
-    clearBookingSelections();
-
-    if (currentTenantId !== numericClubId) {
-      setBookLoading(true);
-      try {
-        toast.info(t.clubDetails.switchingClubToast);
-        await switchClub(numericClubId);
-      } catch (e) {
-        toast.error(getErrorMessage(e));
-        setBookLoading(false);
-        return;
-      } finally {
-        setBookLoading(false);
-      }
-    }
-
-    router.push('/zone-select');
-  }, [
-    club.id,
-    club.joined,
-    currentTenantId,
-    switchClub,
-    toast,
-    t,
-  ]);
+  // onBook moved above the `if (!club)` early return block — see
+  // the docblock just before the useEffect. Inline here is now a
+  // no-op stub kept to preserve the source layout; the actual
+  // handler is bound earlier in the component.
 
   // When the user isn't a member of the displayed club we flip the
   // primary CTA from "Bron qilish" to "Klubga qo'shilish" so the

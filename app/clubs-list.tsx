@@ -205,7 +205,12 @@ export default function ClubsListScreen() {
                 the centred empty placeholder. */}
             <TouchableOpacity
               activeOpacity={0.85}
-              onPress={() => router.push('/club-join')}
+              // No tenant context on the empty-list CTA — route to
+              // Discover so the user can pick a specific club whose
+              // preview carries the tenantId into the register
+              // screen. /club-join with no params would just empty-
+              // state again.
+              onPress={() => router.push('/(tabs)/discover')}
               accessibilityRole="button"
               accessibilityLabel={t.clubsList.joinBtn}
               style={joinBtnStyles.btn}

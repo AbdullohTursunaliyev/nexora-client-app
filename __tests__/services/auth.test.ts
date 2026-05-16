@@ -30,40 +30,6 @@ beforeEach(() => {
 });
 
 describe('auth service', () => {
-  test('register hits /mobile/auth/register and persists mobile token', async () => {
-    mockedPost.mockResolvedValueOnce({
-      data: { token: 't-1', user: { id: 1, login: 'a' }, clubs: [] },
-    });
-
-    const out = await auth.register({
-      login: 'a',
-      password: 'pw',
-      password_confirmation: 'pw',
-    } as any);
-
-    expect(mockedPost).toHaveBeenCalledWith('/mobile/auth/register', {
-      login: 'a',
-      password: 'pw',
-      password_confirmation: 'pw',
-    });
-    expect(tokens.setMobileToken).toHaveBeenCalledWith('t-1');
-    expect(out.token).toBe('t-1');
-  });
-
-  test('login hits /mobile/auth/login and persists mobile token', async () => {
-    mockedPost.mockResolvedValueOnce({
-      data: { token: 't-2', user: { id: 7, login: 'b' }, clubs: [] },
-    });
-
-    await auth.login({ login: 'b', password: 'pw' } as any);
-
-    expect(mockedPost).toHaveBeenCalledWith('/mobile/auth/login', {
-      login: 'b',
-      password: 'pw',
-    });
-    expect(tokens.setMobileToken).toHaveBeenCalledWith('t-2');
-  });
-
   test('me hits /mobile/auth/me and unwraps payload', async () => {
     mockedGet.mockResolvedValueOnce({
       data: { user: { id: 9, login: 'me' }, clubs: [] },

@@ -101,28 +101,43 @@ type Dict = {
     subtitle: string;
   };
   login: {
-    titleLine1: string;
-    titleLine2: string;
-    subtitle: string;
-    tabs: { signin: string; signup: string };
-    loginPlaceholder: string;
-    passwordPlaceholder: string;
-    passwordConfirmPlaceholder: string;
-    showPasswordA11y: string;
-    hidePasswordA11y: string;
-    continue: string;
-    signupBtn: string;
-    divider: string;
-    noAccount: string;
-    haveAccount: string;
-    signupLink: string;
-    signinLink: string;
-    errorLogin: string;
-    errorPassword: string;
-    errorPasswordMismatch: string;
+    /** Hero copy at the top of the phone-entry step. */
+    brandTitle: string;
+    brandSubtitle: string;
+    /** Step 1 — phone number entry. */
+    phoneStepTitle: string;
+    phoneStepSubtitle: string;
+    phonePlaceholder: string;
+    phoneCountryPrefix: string;
+    errorPhone: string;
+    sendCodeBtn: string;
+    sendingCodeLabel: string;
+    /** Step 2 — 4-digit code entry. */
+    codeStepTitle: string;
+    /** Sub-copy under the code step. `{phone}` interpolated with the
+     *  pretty-formatted phone the user typed. */
+    codeStepSubtitle: string;
+    codePlaceholder: string;
+    errorCode: string;
+    verifyBtn: string;
+    /** Countdown label. `{seconds}` is interpolated as `0:42`. */
+    resendIn: string;
+    resendNow: string;
+    /** Dev-only badge that surfaces the OTP echoed by the BE until
+     *  the SMS gateway lands. `{code}` interpolated. */
+    devCodeLabel: string;
+    /** Tappable copy on the code step to go back and edit the phone. */
+    changePhone: string;
+    /** Step 3 — name collection for brand-new phones. */
+    registerStepTitle: string;
+    registerStepSubtitle: string;
+    firstNamePlaceholder: string;
+    lastNamePlaceholder: string;
+    finishRegisterBtn: string;
+    errorFirstName: string;
+    /** Toasts on success. */
     welcomeToast: string;
     registeredToast: string;
-    socialSoonToast: string;
     checkingLabel: string;
   };
   home: {
@@ -479,30 +494,36 @@ type Dict = {
   };
   clubJoin: {
     headerTitle: string;
+    /** Generic title shown when no specific club name is known. */
     title: string;
+    /** Title with `{club}` interpolated — used when route params
+     *  carry the operator-set club name (typical happy path). */
+    titleForClub: string;
     subtitle: string;
-    placeholder: string;
-    qrAlt: string;
     helpTitle: string;
     helpText: string;
     joinBtn: string;
-    errorEmpty: string;
     successToast: string;
-    // ── Password fields (added with the per-club password fix) ──
-    /** Label above the password input field. */
+    /** Label above the login input — user picks the username they
+     *  want to use at this club. Independent of the phone-auth
+     *  login (mobile_user.login). */
+    loginLabel: string;
+    loginPlaceholder: string;
+    loginHint: string;
+    errorLoginShape: string;
+    // ── Password ──
     passwordLabel: string;
-    /** Placeholder inside the password input — "{n}" filled with min len. */
     passwordPlaceholder: string;
-    /** Hint text under the password input — "{n}" filled with min len. */
     passwordHint: string;
-    /** Toast when password is too short (FE pre-check). */
     errorPasswordTooShort: string;
-    /** a11y label on the show-password toggle. */
     passwordShow: string;
-    /** a11y label on the hide-password toggle. */
     passwordHide: string;
-    /** Toast after QR scan auto-fills the code — prompts password entry. */
-    scannedFillPasswordHint: string;
+    // ── No-tenant-context empty state ──
+    /** Title shown when /club-join was reached without a tenantId
+     *  in route params (e.g. via a generic "+ Add club" button). */
+    pickClubTitle: string;
+    pickClubSub: string;
+    pickClubBtn: string;
   };
   clubPreviewScreen: {
     headerTitle: string;
@@ -1372,6 +1393,25 @@ type Dict = {
     pickClubBtn: string;
     /** CTA on the gate when no clubs at all. */
     joinClubBtn: string;
+    // ─── v5 redesign additions: club picker chip + tab split ───
+    /** Tab label for the identity-QR view (shown to cashier / shell). */
+    tabMyCode: string;
+    /** Tab label for the camera scanner view. */
+    tabScan: string;
+    /** Title above the user's identity QR. */
+    myCodeTitle: string;
+    /** Sub-copy under `myCodeTitle`. `{club}` interpolated with current club name. */
+    myCodeSub: string;
+    /** Label next to the per-club login under the QR. */
+    myCodeLoginLabel: string;
+    /** Label next to the user's phone under the QR. */
+    myCodePhoneLabel: string;
+    /** Footer hint explaining the QR's purpose. */
+    myCodeHint: string;
+    /** a11y label on the club-picker chip ("change club"). */
+    changeClubA11y: string;
+    /** Title of the club-picker bottom sheet. */
+    changeClubTitle: string;
   };
   activeSession: {
     headerTitle: string;
@@ -1626,29 +1666,33 @@ export const translations: Record<Locale, Dict> = {
       subtitle: 'Ilova interfeysi tili',
     },
     login: {
-      titleLine1: 'Qaytganingizdan',
-      titleLine2: 'xursandmiz!',
-      subtitle: "Davom etish uchun tizimga kiring\nyoki ro'yxatdan o'ting.",
-      tabs: { signin: 'Kirish', signup: "Ro'yxatdan o'tish" },
-      loginPlaceholder: 'Login (masalan: akmal)',
-      passwordPlaceholder: 'Parol',
-      passwordConfirmPlaceholder: 'Parolni qayta kiriting',
-      showPasswordA11y: "Parolni ko'rsatish",
-      hidePasswordA11y: 'Parolni yashirish',
-      continue: 'Kirish',
-      signupBtn: "Ro'yxatdan o'tish",
-      divider: 'yoki davom eting',
-      noAccount: "Hisobingiz yo'qmi? ",
-      haveAccount: 'Hisobingiz bormi? ',
-      signupLink: "Ro'yxatdan o'tish",
-      signinLink: 'Kirish',
-      errorLogin: "Login 3-64 ta belgi (faqat harf, raqam, _-.)",
-      errorPassword: 'Parol kamida 3 ta belgidan iborat',
-      errorPasswordMismatch: 'Parollar mos kelmadi',
+      brandTitle: 'Xush kelibsiz',
+      brandSubtitle: 'Telefon raqamingiz bilan tez kiring',
+      phoneStepTitle: 'Telefon raqami',
+      phoneStepSubtitle: 'Tasdiqlash kodi shu raqamga yuboriladi',
+      phonePlaceholder: '90 123 45 67',
+      phoneCountryPrefix: '+998',
+      errorPhone: 'Toʻgʻri telefon raqamini kiriting',
+      sendCodeBtn: 'Kod yuborish',
+      sendingCodeLabel: 'Yuborilmoqda…',
+      codeStepTitle: 'Tasdiqlash kodi',
+      codeStepSubtitle: '4 xonali kod yuborildi:\n{phone}',
+      codePlaceholder: '••••',
+      errorCode: 'Kod notoʻgʻri yoki muddati oʻtgan',
+      verifyBtn: 'Kirish',
+      resendIn: 'Qayta yuborish — {seconds}',
+      resendNow: 'Kodni qayta yuborish',
+      devCodeLabel: 'Dev kod: {code}',
+      changePhone: 'Telefon raqamini oʻzgartirish',
+      registerStepTitle: 'Akkaunt yaratish',
+      registerStepSubtitle: 'Ismingizni kiriting — klublar sizni\nshu nom bilan koʻradi',
+      firstNamePlaceholder: 'Ism',
+      lastNamePlaceholder: 'Familiya (ixtiyoriy)',
+      finishRegisterBtn: 'Davom etish',
+      errorFirstName: 'Ism kamida 2 ta belgidan iborat boʻlsin',
       welcomeToast: 'Xush kelibsiz!',
-      registeredToast: "Ro'yxatdan o'tdingiz!",
-      socialSoonToast: "Bu xizmat tez orada qo'shiladi",
-      checkingLabel: 'Tekshirilmoqda...',
+      registeredToast: 'Akkaunt yaratildi',
+      checkingLabel: 'Tekshirilmoqda…',
     },
     home: {
       greetingMorning: 'Xayrli tong',
@@ -1902,23 +1946,27 @@ export const translations: Record<Locale, Dict> = {
       errorOpenUrl: "To'lov tizimini ochib bo'lmadi. Brauzer ishlayotganini tekshiring.",
     },
     clubJoin: {
-      headerTitle: "Klubga qo'shilish",
-      title: 'Klub kodini kiriting',
-      subtitle: "Klub administratori bergan\ntaklif kodini kiriting yoki QR orqali skanerlang.",
-      placeholder: 'Masalan: NEXORA-2024',
-      qrAlt: 'QR kod orqali kirish',
-      helpTitle: 'Kod qayerdan olinadi?',
-      helpText: "• Klub administratoridan so'rang\n• Klub kassirida turgan QR kodda bor\n• Do'stingiz sizga taklif yuborgan bo'lishi mumkin",
-      joinBtn: "Qo'shilish",
-      errorEmpty: 'Klub kodini kiriting',
-      successToast: "Klubga qo'shildingiz!",
-      passwordLabel: 'Klub paroli',
+      headerTitle: "Klubga qoʻshilish",
+      title: 'Klubga roʻyxatdan oʻtish',
+      titleForClub: '{club}ga roʻyxatdan oʻtish',
+      subtitle: 'Bu klubda foydalanadigan login va parol tanlang.\nTelefon raqamingiz avtomatik ulanadi.',
+      helpTitle: 'Bu nima?',
+      helpText: '• Login — operator sizni kassada shu nom bilan koʻradi\n• Parol — kompyuterga kirish paytida ishlatiladi\n• Telefon raqamingiz allaqachon tasdiqlangan',
+      joinBtn: 'Roʻyxatdan oʻtish',
+      successToast: 'Klubga qoʻshildingiz!',
+      loginLabel: 'Login',
+      loginPlaceholder: 'masalan: akmal_98',
+      loginHint: 'Faqat lotin harflari, raqamlar, _ - . belgilar',
+      errorLoginShape: 'Login kamida {n} ta belgi, faqat harf/raqam/_-./',
+      passwordLabel: 'Parol',
       passwordPlaceholder: 'Kamida {n} ta belgi',
-      passwordHint: "Bu parol shu klubga tegishli — kelajakda kirish uchun saqlanadi. Kamida {n} ta belgi.",
-      errorPasswordTooShort: "Parol kamida {n} ta belgi bo'lishi kerak",
-      passwordShow: "Parolni ko'rsatish",
+      passwordHint: 'Bu parol kompyuter kassasiga kirish uchun ishlatiladi. Kamida {n} ta belgi.',
+      errorPasswordTooShort: 'Parol kamida {n} ta belgi boʻlishi kerak',
+      passwordShow: 'Parolni koʻrsatish',
       passwordHide: 'Parolni yashirish',
-      scannedFillPasswordHint: "Kod kiritildi — endi parolni yozing",
+      pickClubTitle: 'Avval klub tanlang',
+      pickClubSub: 'Roʻyxatdan oʻtish uchun avval qaysi klubga qoʻshilmoqchiligingizni tanlang.',
+      pickClubBtn: 'Klublarni koʻrish',
     },
     clubPreviewScreen: {
       headerTitle: "Klub haqida",
@@ -2608,6 +2656,15 @@ export const translations: Record<Locale, Dict> = {
       noTenantToast: 'Avval klubga ulaning',
       pickClubBtn: "Klub tanlash",
       joinClubBtn: "Klubga qo'shilish",
+      tabMyCode: 'Mening kodim',
+      tabScan: 'Skaner',
+      myCodeTitle: 'Sizning kodingiz',
+      myCodeSub: '{club} kassiriga yoki kompyuterga ko‘rsating',
+      myCodeLoginLabel: 'Login',
+      myCodePhoneLabel: 'Telefon',
+      myCodeHint: 'QR kodingiz kassir va kompyuterda sizni avtomatik aniqlaydi.',
+      changeClubA11y: 'Klubni o‘zgartirish',
+      changeClubTitle: 'Klubni tanlang',
     },
     activeSession: {
       headerTitle: 'Faol sessiya',
@@ -2866,29 +2923,33 @@ export const translations: Record<Locale, Dict> = {
       subtitle: 'Язык интерфейса приложения',
     },
     login: {
-      titleLine1: 'Рады вашему',
-      titleLine2: 'возвращению!',
-      subtitle: 'Войдите в систему\nили зарегистрируйтесь.',
-      tabs: { signin: 'Вход', signup: 'Регистрация' },
-      loginPlaceholder: 'Логин (например: akmal)',
-      passwordPlaceholder: 'Пароль',
-      passwordConfirmPlaceholder: 'Повторите пароль',
-      showPasswordA11y: 'Показать пароль',
-      hidePasswordA11y: 'Скрыть пароль',
-      continue: 'Войти',
-      signupBtn: 'Зарегистрироваться',
-      divider: 'или войти через',
-      noAccount: 'Нет аккаунта? ',
-      haveAccount: 'Уже есть аккаунт? ',
-      signupLink: 'Зарегистрироваться',
-      signinLink: 'Войти',
-      errorLogin: 'Логин 3-64 символа (буквы, цифры, _-.)',
-      errorPassword: 'Пароль минимум 3 символа',
-      errorPasswordMismatch: 'Пароли не совпадают',
+      brandTitle: 'Добро пожаловать',
+      brandSubtitle: 'Быстрый вход по номеру телефона',
+      phoneStepTitle: 'Номер телефона',
+      phoneStepSubtitle: 'Мы отправим код подтверждения',
+      phonePlaceholder: '90 123 45 67',
+      phoneCountryPrefix: '+998',
+      errorPhone: 'Введите корректный номер телефона',
+      sendCodeBtn: 'Отправить код',
+      sendingCodeLabel: 'Отправляем…',
+      codeStepTitle: 'Код подтверждения',
+      codeStepSubtitle: '4-значный код отправлен на:\n{phone}',
+      codePlaceholder: '••••',
+      errorCode: 'Неверный или истёкший код',
+      verifyBtn: 'Войти',
+      resendIn: 'Отправить снова — {seconds}',
+      resendNow: 'Отправить код ещё раз',
+      devCodeLabel: 'Dev код: {code}',
+      changePhone: 'Изменить номер телефона',
+      registerStepTitle: 'Создание аккаунта',
+      registerStepSubtitle: 'Введите ваше имя — клубы увидят\nвас под этим именем',
+      firstNamePlaceholder: 'Имя',
+      lastNamePlaceholder: 'Фамилия (необязательно)',
+      finishRegisterBtn: 'Продолжить',
+      errorFirstName: 'Имя должно содержать минимум 2 символа',
       welcomeToast: 'Добро пожаловать!',
-      registeredToast: 'Вы успешно зарегистрировались!',
-      socialSoonToast: 'Эта функция скоро появится',
-      checkingLabel: 'Проверка...',
+      registeredToast: 'Аккаунт создан',
+      checkingLabel: 'Проверка…',
     },
     home: {
       greetingMorning: 'Доброе утро',
@@ -3143,22 +3204,26 @@ export const translations: Record<Locale, Dict> = {
     },
     clubJoin: {
       headerTitle: 'Присоединиться к клубу',
-      title: 'Введите код клуба',
-      subtitle: 'Введите пригласительный код от администратора\nили отсканируйте QR.',
-      placeholder: 'Например: NEXORA-2024',
-      qrAlt: 'Войти через QR-код',
-      helpTitle: 'Где взять код?',
-      helpText: '• Спросите у администратора клуба\n• На QR-коде у кассы\n• Друг мог отправить вам приглашение',
-      joinBtn: 'Присоединиться',
-      errorEmpty: 'Введите код клуба',
+      title: 'Регистрация в клубе',
+      titleForClub: 'Регистрация в {club}',
+      subtitle: 'Выберите логин и пароль для этого клуба.\nВаш номер телефона подставится автоматически.',
+      helpTitle: 'Что это?',
+      helpText: '• Логин — оператор увидит вас в кассе под этим именем\n• Пароль — используется при входе на компьютер\n• Номер телефона уже подтверждён',
+      joinBtn: 'Зарегистрироваться',
       successToast: 'Вы присоединились к клубу!',
-      passwordLabel: 'Пароль клуба',
+      loginLabel: 'Логин',
+      loginPlaceholder: 'например: akmal_98',
+      loginHint: 'Только латинские буквы, цифры и знаки _ - .',
+      errorLoginShape: 'Логин от {n} символов, только буквы/цифры/_-.',
+      passwordLabel: 'Пароль',
       passwordPlaceholder: 'Минимум {n} символов',
-      passwordHint: 'Этот пароль относится только к данному клубу — будет использоваться для будущих входов. Минимум {n} символов.',
+      passwordHint: 'Этим паролем вы будете заходить на компьютер. Минимум {n} символов.',
       errorPasswordTooShort: 'Пароль должен быть не короче {n} символов',
       passwordShow: 'Показать пароль',
       passwordHide: 'Скрыть пароль',
-      scannedFillPasswordHint: 'Код заполнен — теперь введите пароль',
+      pickClubTitle: 'Сначала выберите клуб',
+      pickClubSub: 'Чтобы зарегистрироваться, сначала выберите клуб, к которому вы хотите присоединиться.',
+      pickClubBtn: 'Смотреть клубы',
     },
     clubPreviewScreen: {
       headerTitle: 'О клубе',
@@ -3848,6 +3913,15 @@ export const translations: Record<Locale, Dict> = {
       noTenantToast: 'Сначала подключитесь к клубу',
       pickClubBtn: 'Выбрать клуб',
       joinClubBtn: 'Присоединиться к клубу',
+      tabMyCode: 'Мой код',
+      tabScan: 'Сканер',
+      myCodeTitle: 'Ваш код',
+      myCodeSub: 'Покажите кассиру {club} или камере компьютера',
+      myCodeLoginLabel: 'Логин',
+      myCodePhoneLabel: 'Телефон',
+      myCodeHint: 'QR-код помогает кассиру и компьютеру автоматически вас узнать.',
+      changeClubA11y: 'Сменить клуб',
+      changeClubTitle: 'Выберите клуб',
     },
     activeSession: {
       headerTitle: 'Активная сессия',
@@ -4106,29 +4180,33 @@ export const translations: Record<Locale, Dict> = {
       subtitle: 'App interface language',
     },
     login: {
-      titleLine1: 'Glad to see',
-      titleLine2: 'you back!',
-      subtitle: 'Sign in or create an account\nto continue.',
-      tabs: { signin: 'Sign in', signup: 'Sign up' },
-      loginPlaceholder: 'Username (e.g. akmal)',
-      passwordPlaceholder: 'Password',
-      passwordConfirmPlaceholder: 'Confirm password',
-      showPasswordA11y: 'Show password',
-      hidePasswordA11y: 'Hide password',
-      continue: 'Sign in',
-      signupBtn: 'Sign up',
-      divider: 'or continue with',
-      noAccount: "Don't have an account? ",
-      haveAccount: 'Already have an account? ',
-      signupLink: 'Sign up',
-      signinLink: 'Sign in',
-      errorLogin: 'Username must be 3-64 chars (letters, digits, _-.)',
-      errorPassword: 'Password must be at least 3 characters',
-      errorPasswordMismatch: 'Passwords do not match',
-      welcomeToast: 'Welcome back!',
-      registeredToast: 'Registration successful!',
-      socialSoonToast: 'This option is coming soon',
-      checkingLabel: 'Checking...',
+      brandTitle: 'Welcome',
+      brandSubtitle: 'Fast sign-in with your phone number',
+      phoneStepTitle: 'Phone number',
+      phoneStepSubtitle: 'We will send a verification code',
+      phonePlaceholder: '90 123 45 67',
+      phoneCountryPrefix: '+998',
+      errorPhone: 'Enter a valid phone number',
+      sendCodeBtn: 'Send code',
+      sendingCodeLabel: 'Sending…',
+      codeStepTitle: 'Verification code',
+      codeStepSubtitle: '4-digit code sent to:\n{phone}',
+      codePlaceholder: '••••',
+      errorCode: 'Code is invalid or expired',
+      verifyBtn: 'Sign in',
+      resendIn: 'Resend in {seconds}',
+      resendNow: 'Resend code',
+      devCodeLabel: 'Dev code: {code}',
+      changePhone: 'Change phone number',
+      registerStepTitle: 'Create account',
+      registerStepSubtitle: 'Enter your name — clubs will see\nyou under this name',
+      firstNamePlaceholder: 'First name',
+      lastNamePlaceholder: 'Last name (optional)',
+      finishRegisterBtn: 'Continue',
+      errorFirstName: 'First name must be at least 2 characters',
+      welcomeToast: 'Welcome!',
+      registeredToast: 'Account created',
+      checkingLabel: 'Checking…',
     },
     home: {
       greetingMorning: 'Good morning',
@@ -4383,22 +4461,26 @@ export const translations: Record<Locale, Dict> = {
     },
     clubJoin: {
       headerTitle: 'Join a club',
-      title: 'Enter the club code',
-      subtitle: 'Enter the invite code from the club admin\nor scan a QR.',
-      placeholder: 'e.g. NEXORA-2024',
-      qrAlt: 'Scan QR code',
-      helpTitle: 'Where to get the code?',
-      helpText: '• Ask the club admin\n• On the QR code at the cashier\n• A friend may have sent you an invite',
-      joinBtn: 'Join',
-      errorEmpty: 'Enter a club code',
+      title: 'Register at a club',
+      titleForClub: 'Register at {club}',
+      subtitle: 'Pick a login and password for this club.\nYour phone number is attached automatically.',
+      helpTitle: "What's this?",
+      helpText: "• Login — the cashier will see you under this name\n• Password — used to sign in at the computer\n• Your phone is already verified",
+      joinBtn: 'Register',
       successToast: 'You joined the club!',
-      passwordLabel: 'Club password',
+      loginLabel: 'Login',
+      loginPlaceholder: 'e.g. akmal_98',
+      loginHint: 'Letters, digits, and _ - . only',
+      errorLoginShape: 'Login must be ≥{n} chars, letters/digits/_-.',
+      passwordLabel: 'Password',
       passwordPlaceholder: 'At least {n} characters',
-      passwordHint: "This password is specific to this club — you'll use it for future logins. Minimum {n} characters.",
+      passwordHint: "You'll use this password to sign in at the computer. Minimum {n} characters.",
       errorPasswordTooShort: 'Password must be at least {n} characters',
       passwordShow: 'Show password',
       passwordHide: 'Hide password',
-      scannedFillPasswordHint: 'Code filled — now enter your password',
+      pickClubTitle: 'Pick a club first',
+      pickClubSub: 'To register, choose the club you want to join first.',
+      pickClubBtn: 'Browse clubs',
     },
     clubPreviewScreen: {
       headerTitle: 'About the club',
@@ -5088,6 +5170,15 @@ export const translations: Record<Locale, Dict> = {
       noTenantToast: 'Connect to a club first',
       pickClubBtn: 'Pick a club',
       joinClubBtn: 'Join a club',
+      tabMyCode: 'My code',
+      tabScan: 'Scanner',
+      myCodeTitle: 'Your code',
+      myCodeSub: 'Show this to the cashier at {club} or to the PC camera',
+      myCodeLoginLabel: 'Login',
+      myCodePhoneLabel: 'Phone',
+      myCodeHint: 'Your QR lets the cashier and the PC identify you automatically.',
+      changeClubA11y: 'Change club',
+      changeClubTitle: 'Pick a club',
     },
     activeSession: {
       headerTitle: 'Active session',

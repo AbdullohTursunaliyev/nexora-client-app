@@ -12,6 +12,7 @@ import {
   Text,
   StyleSheet,
   Modal,
+  Platform,
   Pressable,
   TouchableOpacity,
   Animated,
@@ -111,10 +112,43 @@ const VARIANT_ICON: Record<DialogVariant, { glyph: string; color: string; bg: st
 
 export default function AppDialogProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DialogState | null>(null);
+  // When set, the Modal has been asked to close and is mid-dismiss
+  // (iOS only — Android dismisses synchronously). We hold the result
+  // here and resolve the promise from `onDismiss` once UIKit's
+  // transition completes. Resolving synchronously the way we used to
+  // raced with any follow-up native modal — the most painful case
+  // was the location-permission gate: iOS refuses to present its
+  // system alert while another modal is still mid-dismiss and
+  // returns the request as `'denied'` (or hangs the Promise) without
+  // ever showing the prompt. Symptom on user devices was "tap Allow
+  // in the rationale → nothing happens, no OS prompt ever appears".
+  const [closingIOS, setClosingIOS] = useState<{ ok: boolean } | null>(null);
 
   const close = useCallback((ok: boolean) => {
-    setState((prev) => {
-      if (prev) prev.resolve(ok);
+    if (Platform.OS === 'ios') {
+      // Keep state alive so the Modal stays mounted while it
+      // animates out; `closingIOS` flips `visible` to false which
+      // starts the fade. `handleDismissed` fires from `onDismiss`
+      // after the dismissal completes and finalises everything.
+      setClosingIOS({ ok });
+    } else {
+      // Android `Modal.onDismiss` never fires and the native view
+      // tears down within the same frame. Safe to resolve + clear
+      // immediately.
+      setState((prev) => {
+        if (prev) prev.resolve(ok);
+        return null;
+      });
+    }
+  }, []);
+
+  const handleDismissed = useCallback(() => {
+    setClosingIOS((closing) => {
+      if (!closing) return null;
+      setState((prev) => {
+        if (prev) prev.resolve(closing.ok);
+        return null;
+      });
       return null;
     });
   }, []);
@@ -133,6 +167,10 @@ export default function AppDialogProvider({ children }: { children: React.ReactN
   const confirm = useCallback(
     (opts: ConfirmOptions): Promise<boolean> =>
       new Promise<boolean>((resolve) => {
+        // Clear any stale closing flag from a prior dialog cycle —
+        // otherwise the new Modal would mount with `visible=false`
+        // and never appear.
+        setClosingIOS(null);
         setState({ ...opts, hasCancel: true, resolve });
       }),
     [],
@@ -141,6 +179,7 @@ export default function AppDialogProvider({ children }: { children: React.ReactN
   const alert = useCallback(
     (opts: AlertOptions): Promise<void> =>
       new Promise<void>((resolve) => {
+        setClosingIOS(null);
         setState({
           ...opts,
           hasCancel: false,
@@ -155,17 +194,26 @@ export default function AppDialogProvider({ children }: { children: React.ReactN
   return (
     <DialogContext.Provider value={value}>
       {children}
-      <DialogShell state={state} onClose={close} />
+      <DialogShell
+        state={state}
+        visible={state !== null && !closingIOS}
+        onClose={close}
+        onDismissed={handleDismissed}
+      />
     </DialogContext.Provider>
   );
 }
 
 function DialogShell({
   state,
+  visible,
   onClose,
+  onDismissed,
 }: {
   state: DialogState | null;
+  visible: boolean;
   onClose: (ok: boolean) => void;
+  onDismissed: () => void;
 }) {
   // Read translations *here* (inside the dialog shell) rather than
   // relying on caller-provided labels. Otherwise a caller that
@@ -174,7 +222,6 @@ function DialogShell({
   // English/Uzbek copy. Pulling from useT() means the fallback
   // tracks whichever language the user picked in Settings.
   const t = useT();
-  const visible = state !== null;
   const opacity = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(0.92)).current;
 
@@ -211,6 +258,7 @@ function DialogShell({
       transparent
       animationType="fade"
       onRequestClose={() => onClose(false)}
+      onDismiss={onDismissed}
       statusBarTranslucent
     >
       <Animated.View style={[styles.backdrop, { opacity }]}>

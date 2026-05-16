@@ -120,6 +120,39 @@ export async function joinByCode(
   return res.data;
 }
 
+/**
+ * Open self-registration at a club (phone-auth flow).
+ *
+ * Replaces the invite-code-based `joinByCode` for the new mobile
+ * login UX: the user is already identified by their OTP-verified
+ * phone, so the BE pulls phone from the auth-attached mobile_user
+ * and only needs (tenant_id, login, password) on the wire.
+ *
+ *   tenantId  — passed in from the club-preview / club-details
+ *               navigation (every club listing carries a numeric id)
+ *   login     — 3-64 chars [A-Za-z0-9_-.], unique per tenant
+ *   password  — min 8 chars, used at the shell sign-in
+ *
+ * The BE also claims operator-pre-created Client rows that have a
+ * matching phone — see MobileClubController::registerAtClub for the
+ * lookup logic. The FE just hands over the form fields.
+ */
+export async function registerAtClub(
+  tenantId: number,
+  login: string,
+  password: string,
+): Promise<JoinClubResponse> {
+  const res = await apiPost<ApiResource<JoinClubResponse>>(
+    '/mobile/club/register',
+    {
+      tenant_id: tenantId,
+      login,
+      password,
+    },
+  );
+  return res.data;
+}
+
 /** Klub preview (qo'shilishdan oldin) */
 export async function previewClub(tenantId: number): Promise<ClubPreview> {
   const res = await apiGet<ApiResource<ClubPreview>>(`/mobile/club/preview/${tenantId}`);

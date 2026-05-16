@@ -38,11 +38,59 @@ beforeEach(() => {
 });
 
 describe('pcs service', () => {
-  test('listPcs unwraps pcs array', async () => {
-    mockedGet.mockResolvedValueOnce({ data: { pcs: [{ id: 1 }] } });
+  test('listPcs flattens BE zone shape into FE Pc fields', async () => {
+    // The BE catalog wraps zone metadata in a nested `zone: {...}`
+    // object; the FE Pc type advertises flat zone_id / zone_name /
+    // price_per_hour. Pre-adapter the raw wire shape was cast
+    // directly, leaving those fields undefined at runtime — which
+    // broke the zone-select grouping (every PC fell into one bucket)
+    // and the active-session price display. Pin the adapter so the
+    // bug can't silently reappear.
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        pcs: [
+          {
+            id: 1,
+            code: 'PC-01',
+            status: 'free',
+            zone: { id: 5, name: 'STANDART', price_per_hour: 20000 },
+            booking: null,
+            can_book: true,
+            can_unbook: false,
+          },
+        ],
+      },
+    });
     const out = await pcs.listPcs();
     expect(mockedGet).toHaveBeenCalledWith('/mobile/pcs');
-    expect(out).toEqual([{ id: 1 }]);
+    expect(out).toEqual([
+      {
+        id: 1,
+        code: 'PC-01',
+        zone_id: 5,
+        zone_name: 'STANDART',
+        price_per_hour: 20000,
+        status: 'free',
+        ip_address: undefined,
+        booking: null,
+        can_book: true,
+        can_unbook: false,
+      },
+    ]);
+  });
+
+  test('listPcs tolerates missing zone object', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: { pcs: [{ id: 1, code: 'PC-01', status: 'free' }] },
+    });
+    const out = await pcs.listPcs();
+    expect(out[0]).toMatchObject({
+      id: 1,
+      code: 'PC-01',
+      zone_id: null,
+      zone_name: '',
+      price_per_hour: 0,
+    });
   });
 
   test('listPcs returns empty array when pcs missing', async () => {

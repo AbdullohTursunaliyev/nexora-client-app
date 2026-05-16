@@ -4,7 +4,8 @@ import { router } from 'expo-router';
 import { tokens, authEvents } from '../lib/api/client';
 import { STORAGE_KEYS } from '../lib/api/config';
 import * as authApi from '../lib/api/services/auth';
-import type { MobileUser, ClubMembership, LoginBody, RegisterBody } from '../lib/api/types';
+import * as phoneAuthApi from '../lib/api/services/phoneAuth';
+import type { MobileUser, ClubMembership } from '../lib/api/types';
 
 interface AuthState {
   user: MobileUser | null;
@@ -15,8 +16,32 @@ interface AuthState {
 }
 
 interface AuthActions {
-  login: (body: LoginBody) => Promise<void>;
-  register: (body: RegisterBody) => Promise<void>;
+  /**
+   * Step 1 of phone auth: ask the BE to issue a code for this phone.
+   * The response carries `dev_code` while the SMS gateway is pending.
+   */
+  requestPhoneCode: (phone: string) => Promise<phoneAuthApi.RequestCodeResponse>;
+  /**
+   * Step 2 of phone auth: submit the 4-digit code. Returns one of two
+   * outcomes — login (phone matched a user) or needs_registration
+   * (phone is new). On the login outcome the provider has already
+   * persisted the new mobile_token + clubs and selected a tenant.
+   */
+  verifyPhoneCode: (
+    phone: string,
+    code: string,
+  ) => Promise<phoneAuthApi.VerifyCodeResponse>;
+  /**
+   * Step 3 of phone auth (only after verifyPhoneCode returned
+   * needs_registration): trade the signup_token + name for a fresh
+   * account. Provider then runs the same post-login wiring as
+   * verifyPhoneCode.
+   */
+  registerWithPhone: (
+    signupToken: string,
+    firstName?: string | null,
+    lastName?: string | null,
+  ) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
   switchClub: (tenantId: number) => Promise<void>;
@@ -355,26 +380,52 @@ export default function AuthProvider({ children }: ProviderProps) {
     ]);
   }, [user]);
 
-  const login = useCallback(async (body: LoginBody) => {
-    const res = await authApi.login(body);
-    await wipeIfCrossUser(res.user.id);
-    await persistUser(res.user);
-    setClubs(res.clubs);
-    setMobileTokenState(tokens.getMobileToken());
-    // Auto-attach to a tenant so the user can navigate to wallet / pcs
-    // / tournaments etc. without the request interceptor 401-then-
-    // logging-them-out. See ensureTenantSession docblock.
-    await ensureTenantSession(res.clubs, currentTenantId);
-  }, [ensureTenantSession, currentTenantId, wipeIfCrossUser]);
+  /**
+   * Post-login wiring shared by every phone-auth path that actually
+   * lands a session (verify-code happy path, verify-code auto-onboard,
+   * and the post-register path). Pre-fix this was duplicated across
+   * the legacy `login` and `register` callbacks; keeping it in one
+   * place means future identity flows (social sign-in, SSO) only
+   * need to call `applyLoginPayload(...)` after they obtain the
+   * standard MobileAuthResponse shape.
+   */
+  const applyLoginPayload = useCallback(
+    async (payload: { user: MobileUser; clubs: ClubMembership[] }) => {
+      await wipeIfCrossUser(payload.user.id);
+      await persistUser(payload.user);
+      setClubs(payload.clubs);
+      setMobileTokenState(tokens.getMobileToken());
+      // Auto-attach to a tenant so the user can navigate to wallet /
+      // pcs / tournaments etc. without the request interceptor
+      // 401-then-logging-them-out. See ensureTenantSession docblock.
+      await ensureTenantSession(payload.clubs, currentTenantId);
+    },
+    [wipeIfCrossUser, ensureTenantSession, currentTenantId],
+  );
 
-  const register = useCallback(async (body: RegisterBody) => {
-    const res = await authApi.register(body);
-    await wipeIfCrossUser(res.user.id);
-    await persistUser(res.user);
-    setClubs(res.clubs);
-    setMobileTokenState(tokens.getMobileToken());
-    await ensureTenantSession(res.clubs, null);
-  }, [ensureTenantSession, wipeIfCrossUser]);
+  const requestPhoneCode = useCallback(
+    (phone: string) => phoneAuthApi.requestCode(phone),
+    [],
+  );
+
+  const verifyPhoneCode = useCallback(
+    async (phone: string, code: string) => {
+      const res = await phoneAuthApi.verifyCode(phone, code);
+      if (!phoneAuthApi.needsRegistration(res)) {
+        await applyLoginPayload(res);
+      }
+      return res;
+    },
+    [applyLoginPayload],
+  );
+
+  const registerWithPhone = useCallback(
+    async (signupToken: string, firstName?: string | null, lastName?: string | null) => {
+      const res = await phoneAuthApi.register(signupToken, firstName, lastName);
+      await applyLoginPayload(res);
+    },
+    [applyLoginPayload],
+  );
 
   const logout = useCallback(async () => {
     await authApi.logout();
@@ -415,14 +466,15 @@ export default function AuthProvider({ children }: ProviderProps) {
       currentTenantId,
       isAuthenticated: !!user && !!mobileToken,
       isLoading,
-      login,
-      register,
+      requestPhoneCode,
+      verifyPhoneCode,
+      registerWithPhone,
       logout,
       refreshMe,
       switchClub,
       saveProfile,
     }),
-    [user, clubs, currentTenantId, mobileToken, isLoading, login, register, logout, refreshMe, switchClub, saveProfile],
+    [user, clubs, currentTenantId, mobileToken, isLoading, requestPhoneCode, verifyPhoneCode, registerWithPhone, logout, refreshMe, switchClub, saveProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
