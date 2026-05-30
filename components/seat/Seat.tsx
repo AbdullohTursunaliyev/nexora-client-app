@@ -50,12 +50,27 @@ export default function Seat({ id, status, size = 54, onPress }: Props) {
   };
 
   // Scale down the visual height proportionally so the tile keeps a
-  // ~1.17:1 aspect ratio across sizes. Font shrinks below 40 so the
-  // label still fits cleanly on iPhone SE.
+  // ~1.17:1 aspect ratio across sizes. Font ramps up with size so
+  // single-PC rows (132 dp wide) read clearly without manual
+  // overrides per call site.
   const height = Math.round(size * (46 / 54));
-  const fontSize = size >= 44 ? 12.5 : size >= 36 ? 11 : 10;
+  const fontSize =
+    size >= 110 ? 22 :
+    size >= 84 ? 18 :
+    size >= 64 ? 15 :
+    size >= 44 ? 12.5 :
+    size >= 36 ? 11 :
+    10;
+  // Border thickness ramps so the cyan/green frame doesn't visually
+  // disappear on large premium tiles. Stays at 1.5 for the standard
+  // 30-54 dp range so dense grids don't read as chunky.
+  const borderWidth = size >= 100 ? 2.5 : size >= 70 ? 2 : 1.5;
+  // Corner radius softens on big tiles so they feel like cards
+  // rather than dense buttons.
+  const borderRadius = size >= 100 ? 16 : size >= 70 ? 12 : size <= 36 ? 7 : 10;
   // Hitslop fills the missing pixels on small tiles so the touch
-  // target stays >= ~44 dp (iOS HIG target).
+  // target stays >= ~44 dp (iOS HIG target). Big tiles obviously
+  // don't need padding.
   const slop = Math.max(0, Math.round((44 - size) / 2));
 
   return (
@@ -65,7 +80,7 @@ export default function Seat({ id, status, size = 54, onPress }: Props) {
         hitSlop={slop}
         style={[
           styles.seat,
-          { width: size, height, borderRadius: size <= 36 ? 7 : 10 },
+          { width: size, height, borderRadius, borderWidth },
           status === 'available' && styles.available,
           isTaken && styles.taken,
           isSelected && styles.selected,
@@ -91,7 +106,9 @@ const styles = StyleSheet.create({
   seat: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    // borderWidth is now set inline because it scales with tile
+    // size (premium 132-dp tiles use 2.5-pt borders to keep the
+    // status colour visible at distance).
   },
   available: {
     backgroundColor: 'rgba(34, 197, 94, 0.06)',

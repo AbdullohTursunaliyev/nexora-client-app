@@ -24,7 +24,7 @@ import ShieldIcon from '../components/icons/ShieldIcon';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
 import * as pcsApi from '../lib/api/services/pcs';
-import { getErrorMessage } from '../lib/api/client';
+import { generateIdempotencyKey, getErrorMessage } from '../lib/api/client';
 import { useSelectedSeat } from '../lib/state/useSelectedSeat';
 import { useSelectedZone } from '../lib/state/useSelectedZone';
 import { useAuth } from '../store/AuthProvider';
@@ -71,33 +71,59 @@ type BuiltStartAt =
   | { ok: true; iso: string }
   | { ok: false; reason: 'bad_time' | 'bad_date_with_time' };
 
+/**
+ * Slot times displayed in /time-select are TENANT-local (the BE's
+ * /booking/slots endpoint returns HH:MM strings in the club's
+ * operational TZ — currently Asia/Tashkent for every tenant). We
+ * must rebuild the same instant on the way OUT regardless of the
+ * device's TZ — `new Date("YYYY-MM-DDTHH:MM:00")` without an
+ * offset hands JS the phone's local TZ as the assumed zone, which
+ * means a developer on UTC-N or a customer travelling abroad
+ * sends an ISO that maps to a different wall-clock hour back in
+ * the club. Operator hit this on a UTC+11 simulator: picked 11:00,
+ * the BE stored 00:00 UTC, the active-session screen rendered
+ * "05:00" in Tashkent.
+ *
+ * Fix: hard-code "+05:00" as the slot offset until we add a
+ * per-tenant TZ field. The cleanest signal is the offset itself —
+ * we don't need a tz database lookup, just to tag the wall-clock
+ * time with Tashkent's offset so JS's Date parser interprets it
+ * correctly.
+ */
+const TENANT_TZ_OFFSET = '+05:00';
+
 function buildStartAt(startTime: string, startDate?: string): BuiltStartAt {
   const [hh, mm] = startTime.split(':').map((p) => Number(p));
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) {
     return { ok: false, reason: 'bad_time' };
   }
 
-  // Prefer the BE-provided date when present + valid. Parse as
-  // `YYYY-MM-DDTHH:MM:00` and let `new Date()` apply the local TZ —
-  // matches the BE's "local-time slot" semantics.
   if (startDate && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
     const pad = (n: number) => String(n).padStart(2, '0');
-    const target = new Date(`${startDate}T${pad(hh)}:${pad(mm)}:00`);
+    // Tag the time with the tenant's offset so the resulting Date
+    // points at the right UTC instant on every device.
+    const target = new Date(
+      `${startDate}T${pad(hh)}:${pad(mm)}:00${TENANT_TZ_OFFSET}`,
+    );
     if (!Number.isNaN(target.getTime())) {
       return { ok: true, iso: target.toISOString() };
     }
-    // Date string passed the regex but Date() couldn't parse it
-    // (e.g. "2026-02-30"). Surface a distinct reason so the caller
-    // can show a meaningful toast.
     return { ok: false, reason: 'bad_date_with_time' };
   }
 
   // Legacy fallback path — used only when startDate is missing
   // (older builds, deep-link entry without time-select context).
-  const target = new Date();
-  target.setHours(hh, mm, 0, 0);
+  // Same TZ pin as above: build today's local-Tashkent ISO, then
+  // bump by a day if it's already past.
+  const todayInTashkent = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Tashkent',
+  }); // YYYY-MM-DD
+  const pad = (n: number) => String(n).padStart(2, '0');
+  let target = new Date(
+    `${todayInTashkent}T${pad(hh)}:${pad(mm)}:00${TENANT_TZ_OFFSET}`,
+  );
   if (target.getTime() < Date.now()) {
-    target.setDate(target.getDate() + 1);
+    target = new Date(target.getTime() + 24 * 60 * 60 * 1000);
   }
   return { ok: true, iso: target.toISOString() };
 }
@@ -202,11 +228,32 @@ export default function PaymentScreen() {
   // Audit finding #2.
   const submittingRef = useRef(false);
 
+  // Stable Idempotency-Key for THIS booking intent. Keyed on the
+  // selection (seat + slot + date + package) so it stays constant
+  // across retries and accidental double-taps of Confirm — the BE
+  // de-dups a retried POST and returns the original PcBooking instead
+  // of double-debiting the deposit. If the user goes back and picks a
+  // different seat / time / package, the inputs change, the memo
+  // recomputes, and the new booking gets its own key. Pre-fix the
+  // axios interceptor minted a fresh UUID on every POST, so a network
+  // retry of the same charge looked like a brand-new request to the BE
+  // — the double-charge the key was supposed to prevent.
+  const bookingIdempotencyKey = useMemo(
+    () => generateIdempotencyKey(),
+    [seatId, pcId, params.startTime, params.startDate, params.packageId],
+  );
+
   // Prefer the package price + duration forwarded from /time-select
-  // (the source of truth for what the user chose). Fall back to the
-  // per-zone hourly rate × 1 hour only when the params are missing —
-  // typically a navigation regression we don't want to crash on.
-  const pricePerHour = ZONE_PRICE[zoneId ?? 'pc'] ?? ZONE_PRICE.pc;
+  // (the source of truth for what the user chose). For balance-mode
+  // (no package), use the operator-set per-hour price stored in
+  // `useSelectedZone` when zone-select recorded the pick. Falls
+  // back to the FE-constant ZONE_PRICE table only when the
+  // singleton is empty (deep-link entry without going through
+  // zone-select). Pre-fix this read the hardcoded table directly,
+  // so a 12 000-sum/h zone showed 20 000 sum on the payment screen.
+  const zonePricePerHour = useSelectedZone().zonePricePerHour;
+  const pricePerHour =
+    zonePricePerHour ?? ZONE_PRICE[zoneId ?? 'pc'] ?? ZONE_PRICE.pc;
   const durationHours =
     packageDuration && Number.isFinite(packageDuration) ? packageDuration : FALLBACK_DURATION_HOURS;
   const subtotal =
@@ -344,11 +391,28 @@ export default function PaymentScreen() {
       }
       const holdMinutes = Math.max(1, Math.round(durationHours * 60));
       const packageIdNum = params.packageId ? Number(params.packageId) : null;
-      const bookRes = await pcsApi.bookPc(pcId, {
-        start_at: startAtIso,
-        hold_minutes: holdMinutes,
-        package_id: Number.isFinite(packageIdNum) ? packageIdNum : null,
-      });
+      const isPackageMode = Number.isFinite(packageIdNum) && (packageIdNum as number) > 0;
+      // Reservation deposit — only set for balance/hourly mode.
+      // Package mode passes 0 (the package itself is the
+      // commitment). See the BE migration docblock at
+      // 2026_05_17_010000_add_reservation_deposit_columns for the
+      // full accounting model. The BE re-checks balance under a row
+      // lock before debiting; sending this number doesn't bypass
+      // the wallet guard.
+      const depositAmount = isPackageMode ? 0 : total;
+      // Pass the stable per-intent key so a retry / double-tap of this
+      // same booking reuses it and the BE de-dups instead of creating
+      // a second reservation + double-charging the deposit.
+      const bookRes = await pcsApi.bookPc(
+        pcId,
+        {
+          start_at: startAtIso,
+          hold_minutes: holdMinutes,
+          package_id: isPackageMode ? (packageIdNum as number) : null,
+          deposit_amount: depositAmount,
+        },
+        bookingIdempotencyKey,
+      );
 
       // Real PcBooking id from the BE — replaces the previously
       // fabricated `NXR-{pcId}-{HHMM}` string. Staff scanning the QR
@@ -460,12 +524,64 @@ export default function PaymentScreen() {
               <GiftIcon size={18} color="#7C3AED" />
             </View>
             <View style={styles.summaryContent}>
-              <Text style={styles.summaryTitle}>{t.payment.summaryHourly}</Text>
-              <Text style={styles.summarySubtitle}>{t.payment.summaryTime}</Text>
+              {/* Title:
+                  - Package selected → operator-set package name
+                    (e.g. "Premium pass", "Tungi paket")
+                  - Balance / hourly mode → localised "Hourly billing"
+                  Pre-fix everyone saw the same "Почасовой" string
+                  regardless of which option they actually picked. */}
+              <Text style={styles.summaryTitle}>
+                {params.packageTitle && params.packageTitle.length > 0
+                  ? params.packageTitle
+                  : t.payment.summaryHourly}
+              </Text>
+              {/* Subtitle layout:
+                    {DD MMM, HH:MM – HH:MM}   ·  {N h}
+                    {pricePerHour}/{h}                       (balance mode only)
+                  The first line is always shown so the user sees
+                  WHICH session they're booking; the second line
+                  only renders for balance mode and shows the unit
+                  rate that produced the subtotal above. Package
+                  mode hides the unit-rate line because the price
+                  is flat-rate by design. */}
+              <Text style={styles.summarySubtitle}>
+                {`${t.payment.summaryTime} · ${durationHours} ${t.timeSelect.hoursSuffix}`}
+              </Text>
+              {(!params.priceAmount || params.priceAmount === '') && (
+                <Text style={styles.summarySubtitle}>
+                  {`${formatSum(pricePerHour)} ${t.common.currencyUnit}/${t.timeSelect.hoursSuffix}`}
+                </Text>
+              )}
             </View>
             <Text style={styles.summaryPrice}>{formatSum(subtotal)} {t.common.currencyUnit}</Text>
           </View>
         </View>
+
+        {/* Deposit/refund explainer — visible only in balance/hourly
+            mode. Booking debits the user's balance for one hour as
+            a reservation hold; when they actually sit at the PC and
+            the shell starts the session, the hold is refunded so
+            real-time billing takes over. No-shows lose the hold as
+            a commitment fee. Package mode skips this banner because
+            packages are flat-rate by design. */}
+        {(!params.priceAmount || params.priceAmount === '') && (
+          <View style={styles.depositCard}>
+            <View style={styles.depositRow}>
+              <View style={styles.depositIcon}>
+                <Text style={styles.depositIconGlyph}>ⓘ</Text>
+              </View>
+              <View style={styles.depositText}>
+                <Text style={styles.depositTitle}>{t.payment.depositTitle}</Text>
+                <Text style={styles.depositSub}>
+                  {t.payment.depositSub.replace(
+                    '{amount}',
+                    `${formatSum(subtotal)} ${t.common.currencyUnit}`,
+                  )}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         <Text style={styles.sectionTitle}>{t.payment.promoLabel}</Text>
         {PROMO_INPUT_ENABLED && (
@@ -724,6 +840,51 @@ const styles = StyleSheet.create({
     color: Colors.text,
     marginTop: 22,
     marginBottom: 10,
+  },
+  // Deposit explainer card — sits right under the summary, before
+  // the promo row. Amber tint marks it as "you should read this"
+  // without screaming danger (deposit-refund is normal, not an
+  // error). Renders only in balance/hourly mode.
+  depositCard: {
+    marginTop: 16,
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.28)',
+  },
+  depositRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
+  depositIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  depositIconGlyph: {
+    fontFamily: Fonts.inter.bold,
+    fontSize: 14,
+    color: '#F59E0B',
+  },
+  depositText: {
+    flex: 1,
+    gap: 4,
+  },
+  depositTitle: {
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 13.5,
+    color: '#F59E0B',
+  },
+  depositSub: {
+    fontFamily: Fonts.inter.regular,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: '#C7CAD1',
   },
   promoRow: {
     flexDirection: 'row',

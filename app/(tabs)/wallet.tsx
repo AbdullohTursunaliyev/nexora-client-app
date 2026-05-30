@@ -19,6 +19,7 @@ import WalletIcon from '../../components/icons/WalletIcon';
 import ChevronDownIcon from '../../components/icons/ChevronDownIcon';
 import CheckIcon from '../../components/icons/CheckIcon';
 import LocationPinIcon from '../../components/icons/LocationPinIcon';
+import PlusCircleIcon from '../../components/icons/PlusCircleIcon';
 import { useDiscoverClubs } from '../../lib/hooks/useDiscoverClubs';
 import { useSelectedClub } from '../../lib/state/useSelectedClub';
 import { useT } from '../../lib/i18n/LocaleProvider';
@@ -348,78 +349,38 @@ export default function WalletScreen() {
           </View>
         </LinearGradient>
 
-        {/* Payment methods section — Click + Payme cards rendered as
-            soon-gated tiles. Non-tappable: the user sees that these
-            options are coming without being routed into a placeholder
-            screen that confuses the "Soon" promise. Restore the
-            onPress + drop the badge per card when the PSP integration
-            lands. */}
+        {/* Top-up entry point — routes to the self-service flow, which
+            is provider-gated on the BE (a club with no connected PSP
+            shows an info card there instead of any payment UI). We no
+            longer list Payme/Click here as static tiles: the live screen
+            asks the BE which providers THIS club actually supports and
+            renders only those, so the entry stays a single CTA. */}
         <Text style={styles.sectionTitle}>
           {t.walletScreen.paymentMethodsTitle}
         </Text>
 
-        <PaymentMethodCard
-          name="Payme"
-          subtitle={t.walletScreen.paymeSub}
-          letter="P"
-          accent="#26C6F8"
-          a11y={t.walletScreen.paymentMethodA11y.replace('{name}', 'Payme')}
-          soonLabel={t.soon.badgeShort}
-        />
-        <PaymentMethodCard
-          name="Click"
-          subtitle={t.walletScreen.clickSub}
-          letter="C"
-          accent="#22C55E"
-          a11y={t.walletScreen.paymentMethodA11y.replace('{name}', 'Click')}
-          soonLabel={t.soon.badgeShort}
-        />
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => router.push('/wallet-topup')}
+          accessibilityRole="button"
+          accessibilityLabel={t.components.qaTopup}
+          style={topupBtnStyles.btn}
+        >
+          <LinearGradient
+            colors={['#3B5BF5', '#8B3DF5']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={topupBtnStyles.fill}
+          >
+            <PlusCircleIcon size={18} color={Colors.white} />
+            <Text style={topupBtnStyles.label} numberOfLines={1}>
+              {t.components.qaTopup}
+            </Text>
+          </LinearGradient>
+        </TouchableOpacity>
       </ScrollView>
       {renderPicker()}
     </SafeAreaView>
-  );
-}
-
-interface PaymentMethodCardProps {
-  name: string;
-  subtitle: string;
-  letter: string;
-  accent: string;
-  a11y: string;
-  soonLabel: string;
-}
-
-function PaymentMethodCard({
-  name,
-  subtitle,
-  letter,
-  accent,
-  a11y,
-  soonLabel,
-}: PaymentMethodCardProps) {
-  return (
-    // Non-tappable View — soon-gated. Once the PSP wiring lands,
-    // promote to TouchableOpacity with an onPress that initiates the
-    // top-up flow + drop the Soon badge.
-    <View
-      style={styles.methodCard}
-      accessibilityRole="summary"
-      accessible
-      accessibilityLabel={`${a11y}, ${soonLabel}`}
-    >
-      <View style={[styles.methodLogo, { backgroundColor: accent }]}>
-        <Text style={styles.methodLogoText}>{letter}</Text>
-      </View>
-      <View style={styles.methodBody}>
-        <Text style={styles.methodName}>{name}</Text>
-        <Text style={styles.methodSub} numberOfLines={1}>
-          {subtitle}
-        </Text>
-      </View>
-      <View style={[styles.soonBadge, styles.soonBadgeInline]}>
-        <Text style={styles.soonBadgeText}>{soonLabel}</Text>
-      </View>
-    </View>
   );
 }
 
@@ -517,71 +478,13 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(196, 181, 253, 0.25)',
   },
 
-  // ── Section heading + payment methods ────────────────────────────
+  // ── Section heading + top-up CTA ─────────────────────────────────
   sectionTitle: {
     fontFamily: Fonts.inter.semiBold,
     fontSize: 14,
     color: Colors.text,
     marginTop: 22,
     marginBottom: 10,
-  },
-  methodCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#141823',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
-    opacity: 0.85,
-  },
-  methodLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  methodLogoText: {
-    fontFamily: Fonts.inter.bold,
-    fontSize: 18,
-    color: Colors.white,
-  },
-  methodBody: {
-    flex: 1,
-    gap: 3,
-  },
-  methodName: {
-    fontFamily: Fonts.inter.semiBold,
-    fontSize: 14,
-    color: Colors.text,
-  },
-  methodSub: {
-    fontFamily: Fonts.inter.regular,
-    fontSize: 11.5,
-    color: '#8B95A8',
-  },
-
-  // ── Soon badge variants ──────────────────────────────────────────
-  soonBadge: {
-    backgroundColor: 'rgba(255, 159, 67, 0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 159, 67, 0.45)',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  soonBadgeInline: {
-    alignSelf: 'center',
-  },
-  soonBadgeText: {
-    fontFamily: Fonts.inter.bold,
-    fontSize: 9,
-    color: '#FFB76A',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
   },
 
   // ── Empty / no-club state ────────────────────────────────────────
@@ -755,6 +658,27 @@ const joinClubBtnStyles = StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: Fonts.inter.semiBold,
     fontSize: 14,
+    letterSpacing: 0.1,
+  },
+});
+
+// Top-up entry CTA on the wallet tab — full-width lg pill that routes
+// to the provider-gated /wallet-topup flow. Same shape language as the
+// empty-state pick CTA above; no shadow (Hard Rule #3).
+const topupBtnStyles = StyleSheet.create({
+  btn: { height: 52, borderRadius: 999, alignSelf: 'stretch', overflow: 'hidden' },
+  fill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 28,
+  },
+  label: {
+    color: '#FFFFFF',
+    fontFamily: Fonts.inter.semiBold,
+    fontSize: 15,
     letterSpacing: 0.1,
   },
 });

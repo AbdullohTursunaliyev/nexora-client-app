@@ -31,6 +31,8 @@ export interface MobileUser {
    * filled it in via profile-edit.
    */
   phone?: string | null;
+  birth_date?: string | null;
+  referral_code?: string | null;
   avatar_url?: string | null;
   created_at?: string;
 }
@@ -92,6 +94,7 @@ export interface SaveProfileBody {
   first_name?: string | null;
   last_name?: string | null;
   phone?: string | null;
+  birth_date?: string | null;
   avatar_url?: string | null;
 }
 
@@ -164,9 +167,22 @@ export interface ClientSummary {
  * was a stranger's PC anywhere with more than one concurrent user.
  */
 export interface PcBookingInfo {
+  /** PcBooking row id — used by /active-session to render a stable
+   *  booking reference (formatted as `NXR-{padded id}`). Optional for
+   *  back-compat with older BE builds that don't emit it. */
+  id?: number;
   client_id: number;
   reserved_from?: string | null;
   reserved_until?: string | null;
+  /** Package id when the booking was placed against a paid package;
+   *  null in balance / hourly mode. */
+  package_id?: number | null;
+  /** Operator-set package name. Null in balance mode. */
+  package_title?: string | null;
+  /** Reservation hold in UZS — the amount debited from the client's
+   *  balance at booking time and refunded when the session starts.
+   *  Zero for package-mode bookings. */
+  deposit_amount?: number;
   is_mine: boolean;
 }
 

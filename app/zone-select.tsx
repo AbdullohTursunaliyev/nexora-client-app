@@ -178,15 +178,14 @@ export default function ZoneSelectScreen() {
   );
 
   const onZonePress = useCallback(
-    (id: string, beId: number, name: string) => {
-      // Pass the operator-set name through alongside the id so the
-      // downstream seat-select / time-select headers can show
-      // "STANDART" / "BUS" instead of falling back to the generic
-      // "PC зона" copy while their own data is in flight.
-      select(id, name);
-      // Capture the BE numeric id immediately so time-select's
-      // pricing-window fetch doesn't have to wait for seat-select to
-      // resolve it via heuristic.
+    (id: string, beId: number, name: string, pricePerHour: number | null) => {
+      // Pass the operator-set name + price through alongside the id
+      // so the downstream seat-select / time-select / payment screens
+      // can render the real club's data — pre-fix payment fell back
+      // to a hardcoded FE-constant `ZONE_PRICE` table that had no
+      // relation to the operator's `zones.price_per_hour` row and
+      // surfaced 20 000 sum on a 12 000-sum-per-hour zone.
+      select(id, name, pricePerHour);
       setBeZoneId(beId);
       router.push('/seat-select');
     },
@@ -264,7 +263,9 @@ export default function ZoneSelectScreen() {
                   priceLabel={priceLabel}
                   imageUri={zone.imageUri}
                   selected={zone.id === zoneId}
-                  onPress={() => onZonePress(zone.id, zone.beId, zone.title)}
+                  onPress={() =>
+                    onZonePress(zone.id, zone.beId, zone.title, zone.pricePerHour)
+                  }
                 />
               </FadeInView>
             );

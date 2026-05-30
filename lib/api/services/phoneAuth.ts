@@ -116,6 +116,8 @@ export async function register(
   signupToken: string,
   firstName?: string | null,
   lastName?: string | null,
+  referralCode?: string | null,
+  birthDate?: string | null,
 ): Promise<MobileAuthResponse> {
   const res = await apiPost<ApiResource<MobileAuthResponse>>(
     '/mobile/auth/phone/register',
@@ -123,6 +125,8 @@ export async function register(
       signup_token: signupToken,
       first_name: firstName ?? null,
       last_name: lastName ?? null,
+      referral_code: referralCode ?? null,
+      birth_date: birthDate ?? null,
     },
   );
   await tokens.setMobileToken(res.data.token);

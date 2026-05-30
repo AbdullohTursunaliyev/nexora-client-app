@@ -30,7 +30,22 @@ export interface FriendUser {
   first_name?: string;
   last_name?: string;
   avatar_url?: string;
+  /** E.164-ish phone (digits-only canonical form, may have +). */
+  phone?: string;
   online?: boolean;
+}
+
+/**
+ * One row in `/mobile/friends/activity` — a friend + their current
+ * playing-status snapshot. Polled every ~10-15 s by the friends list
+ * so the user sees "Akmal is playing PC-04 at Cyberium" in near-real
+ * time. See BE MobileFriendService::activity for the lookup chain.
+ */
+export interface FriendActivityItem extends FriendUser {
+  status: 'in_session' | 'offline';
+  current_club: { tenant_id: number; tenant_name: string } | null;
+  current_pc: { id: number; code: string } | null;
+  session: { id: number; started_at: string | null; is_package: boolean } | null;
 }
 
 /**
@@ -136,6 +151,7 @@ function adaptFriendUser(raw: {
   first_name?: string | null;
   last_name?: string | null;
   avatar_url?: string | null;
+  phone?: string | null;
 }): FriendUser {
   return {
     id: Number(raw.mobile_user_id ?? raw.id ?? 0),
@@ -143,6 +159,7 @@ function adaptFriendUser(raw: {
     first_name: raw.first_name ?? undefined,
     last_name: raw.last_name ?? undefined,
     avatar_url: raw.avatar_url ?? undefined,
+    phone: raw.phone ?? undefined,
   };
 }
 
@@ -372,4 +389,51 @@ export async function respondInvite(
     { action },
   );
   return res.data;
+}
+
+// ---- Live activity (polled) -------------------------------------------
+
+interface RawFriendActivityItem {
+  mobile_user_id: number;
+  login: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  avatar_url?: string | null;
+  phone?: string | null;
+  status: 'in_session' | 'offline';
+  current_club: { tenant_id: number; tenant_name: string } | null;
+  current_pc: { id: number; code: string } | null;
+  session: { id: number; started_at: string | null; is_package: boolean } | null;
+}
+
+interface RawFriendActivityResponse {
+  friends: RawFriendActivityItem[];
+}
+
+/**
+ * GET /mobile/friends/activity — live playing-status rollup.
+ *
+ * Returns the caller's accepted friends sorted with "in_session"
+ * first, each annotated with their current club + PC (or null when
+ * offline). The mobile FE polls this every ~10-15 s — see the
+ * friends list screen for the hook that drives the cadence.
+ *
+ * Empty list ⇒ user has no accepted friends. Same payload shape as
+ * any other case so consumers don't need a special branch for it.
+ */
+export async function friendActivity(): Promise<FriendActivityItem[]> {
+  const res = await apiGet<ApiResource<RawFriendActivityResponse>>(
+    '/mobile/friends/activity',
+  );
+  const raw = res.data ?? ({} as RawFriendActivityResponse);
+  if (!Array.isArray(raw.friends)) return [];
+  return raw.friends.map(
+    (r): FriendActivityItem => ({
+      ...adaptFriendUser(r),
+      status: r.status === 'in_session' ? 'in_session' : 'offline',
+      current_club: r.current_club ?? null,
+      current_pc: r.current_pc ?? null,
+      session: r.session ?? null,
+    }),
+  );
 }

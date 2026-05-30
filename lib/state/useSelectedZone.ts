@@ -55,6 +55,18 @@ let currentBeZoneId: number | null = null;
  * zone upstream.
  */
 let currentZoneName: string | null = null;
+/**
+ * Per-hour price (UZS) for the picked zone, sourced from the BE
+ * catalog when zone-select stored the pick. The payment screen
+ * reads this for balance-mode bookings instead of falling back to
+ * a hardcoded FE-constant ZONE_PRICE table (which had no relation
+ * to the operator's actual `zones.price_per_hour` row and was
+ * surfacing 20 000 sum on a 12 000-sum-per-hour zone in the field).
+ * Null when no zone is picked yet OR the operator hasn't set a
+ * price — payment falls back to 0 in that case and the user can
+ * still proceed but sees "0 sum" which is honest about the gap.
+ */
+let currentZonePricePerHour: number | null = null;
 let storageHydrated = false;
 const listeners = new Set<() => void>();
 
@@ -96,6 +108,7 @@ export function resetSelectedZone(): void {
   currentZoneId = null;
   currentBeZoneId = null;
   currentZoneName = null;
+  currentZonePricePerHour = null;
   notify();
   // Best-effort wipe; failures here are silent (storage unavailable
   // shouldn't block navigation).
@@ -127,23 +140,36 @@ export function useSelectedZone() {
     };
   }, []);
 
-  const select = useCallback(async (id: string, name?: string | null) => {
-    currentZoneId = id;
-    // New zone category picked — invalidate any previously-resolved
-    // BE id so seat-select re-resolves against the new bucket.
-    currentBeZoneId = null;
-    // Optional name pass-through: zone-select now hands us the
-    // operator-set zone name so downstream screens can render it as
-    // the title without waiting for the grid fetch.
-    currentZoneName = name ?? null;
-    notify();
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, id);
-    } catch {
-      // Same fall-back as hydrate — in-memory state is the source of
-      // truth for the live session.
-    }
-  }, []);
+  const select = useCallback(
+    async (
+      id: string,
+      name?: string | null,
+      pricePerHour?: number | null,
+    ) => {
+      currentZoneId = id;
+      // New zone category picked — invalidate any previously-resolved
+      // BE id so seat-select re-resolves against the new bucket.
+      currentBeZoneId = null;
+      // Optional name pass-through: zone-select now hands us the
+      // operator-set zone name so downstream screens can render it as
+      // the title without waiting for the grid fetch.
+      currentZoneName = name ?? null;
+      // Operator-set per-hour price — payment uses this for balance-
+      // mode bookings instead of an FE-side hardcoded fallback.
+      currentZonePricePerHour =
+        typeof pricePerHour === 'number' && Number.isFinite(pricePerHour) && pricePerHour > 0
+          ? pricePerHour
+          : null;
+      notify();
+      try {
+        await AsyncStorage.setItem(STORAGE_KEY, id);
+      } catch {
+        // Same fall-back as hydrate — in-memory state is the source of
+        // truth for the live session.
+      }
+    },
+    [],
+  );
 
   /**
    * Set the BE numeric zone id once seat-select has resolved which
@@ -161,6 +187,7 @@ export function useSelectedZone() {
     currentZoneId = null;
     currentBeZoneId = null;
     currentZoneName = null;
+    currentZonePricePerHour = null;
     notify();
     try {
       await AsyncStorage.removeItem(STORAGE_KEY);
@@ -173,6 +200,9 @@ export function useSelectedZone() {
     beZoneId: currentBeZoneId,
     /** Operator-set zone name when known. See module-level docblock. */
     zoneName: currentZoneName,
+    /** Operator-set per-hour price (UZS) for the picked zone. Null
+     *  when no zone is picked yet OR the operator hasn't set one. */
+    zonePricePerHour: currentZonePricePerHour,
     select,
     setBeZoneId,
     clear,

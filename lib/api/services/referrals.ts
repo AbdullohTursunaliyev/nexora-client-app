@@ -1,7 +1,7 @@
 import { apiGet } from '../client';
 import type { ApiResource } from '../types';
 
-interface ReferralResponse {
+export interface ReferralResponse {
   code: string;
   invite_url: string;
   total_invites: number;

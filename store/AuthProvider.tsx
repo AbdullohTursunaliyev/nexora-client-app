@@ -5,7 +5,7 @@ import { tokens, authEvents } from '../lib/api/client';
 import { STORAGE_KEYS } from '../lib/api/config';
 import * as authApi from '../lib/api/services/auth';
 import * as phoneAuthApi from '../lib/api/services/phoneAuth';
-import type { MobileUser, ClubMembership } from '../lib/api/types';
+import type { MobileUser, ClubMembership, SaveProfileBody } from '../lib/api/types';
 
 interface AuthState {
   user: MobileUser | null;
@@ -41,11 +41,13 @@ interface AuthActions {
     signupToken: string,
     firstName?: string | null,
     lastName?: string | null,
+    referralCode?: string | null,
+    birthDate?: string | null,
   ) => Promise<void>;
   logout: () => Promise<void>;
   refreshMe: () => Promise<void>;
   switchClub: (tenantId: number) => Promise<void>;
-  saveProfile: (body: { first_name?: string | null; last_name?: string | null; phone?: string | null; avatar_url?: string | null }) => Promise<void>;
+  saveProfile: (body: SaveProfileBody) => Promise<void>;
 }
 
 type AuthContextValue = AuthState & AuthActions;
@@ -420,8 +422,14 @@ export default function AuthProvider({ children }: ProviderProps) {
   );
 
   const registerWithPhone = useCallback(
-    async (signupToken: string, firstName?: string | null, lastName?: string | null) => {
-      const res = await phoneAuthApi.register(signupToken, firstName, lastName);
+    async (
+      signupToken: string,
+      firstName?: string | null,
+      lastName?: string | null,
+      referralCode?: string | null,
+      birthDate?: string | null,
+    ) => {
+      const res = await phoneAuthApi.register(signupToken, firstName, lastName, referralCode, birthDate);
       await applyLoginPayload(res);
     },
     [applyLoginPayload],
@@ -449,10 +457,18 @@ export default function AuthProvider({ children }: ProviderProps) {
     // who switched clubs mid-session could see the OLD club's data
     // for up to 30s, which masked real seat availability and made
     // the "joined" badges flicker between two tenants.
-    authEvents.emit('auth:logout');
+    //
+    // Use the dedicated `auth:tenant-switched` event, NOT `auth:logout`.
+    // The session is still alive — only tenant-scoped caches are stale.
+    // Emitting `auth:logout` here (the pre-fix behaviour) also wiped
+    // device-scoped state that should survive a club switch (favourites,
+    // the booking-flow zone pick subscribe to `auth:logout`) and
+    // dangerously coupled "switch club" to "log the user out". See the
+    // AuthEvent docblock in `lib/api/client.ts`.
+    authEvents.emit('auth:tenant-switched');
   }, []);
 
-  const saveProfile = useCallback(async (body: { first_name?: string | null; last_name?: string | null; phone?: string | null; avatar_url?: string | null }) => {
+  const saveProfile = useCallback(async (body: SaveProfileBody) => {
     const res = await authApi.saveProfile(body);
     if (res.user) await persistUser(res.user);
   }, []);

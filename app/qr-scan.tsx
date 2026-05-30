@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -22,8 +22,9 @@ import LightningIcon from '../components/icons/LightningIcon';
 import GalleryIcon from '../components/icons/GalleryIcon';
 import { useT } from '../lib/i18n/LocaleProvider';
 import { useToast } from '../components/common/Toast';
+import { useDialog } from '../components/common/AppDialog';
 import * as pcsApi from '../lib/api/services/pcs';
-import { getErrorMessage } from '../lib/api/client';
+import { generateIdempotencyKey, getErrorMessage } from '../lib/api/client';
 import { useAuth } from '../store/AuthProvider';
 import type { ClubMembership } from '../lib/api/types';
 
@@ -34,6 +35,20 @@ import type { ClubMembership } from '../lib/api/types';
 const QrCameraEmbed = lazy(() => import('../components/qr/QrCameraEmbed'));
 
 type ScanTab = 'myCode' | 'scan';
+
+/**
+ * Discriminated result of `parseQr`.
+ *
+ *   • `pc` — a printed PC sticker. `code` is the tenant-scoped label
+ *     (e.g. "PC-01") fed to `openByQr`; `tenantId` is the sticker's
+ *     advertised club (null on legacy stickers) used for the
+ *     cross-tenant guard.
+ *   • `claim` — a Shell login QR (`nexora://claim?cid=<uuid>`).
+ *     `claimId` is the one-time Shell claim id fed to `claimPc`.
+ */
+type ParsedQr =
+  | { kind: 'pc'; code: string; tenantId: number | null }
+  | { kind: 'claim'; claimId: string };
 
 /**
  * QR / scanner screen — v5 redesign.
@@ -61,6 +76,7 @@ type ScanTab = 'myCode' | 'scan';
 export default function QrScanScreen() {
   const t = useT();
   const toast = useToast();
+  const dialog = useDialog();
   const insets = useSafeAreaInsets();
   const { user, currentTenantId, clubs, switchClub } = useAuth();
 
@@ -70,6 +86,22 @@ export default function QrScanScreen() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [clubPickerOpen, setClubPickerOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ScanTab>('myCode');
+
+  // Per-PC-code Idempotency-Key cache. Opening a PC by QR starts a
+  // billable session server-side; the camera fires `onScan` on every
+  // decoded frame and the user can re-tap a recognised code, so a slow
+  // network could let two opens for the SAME sticker race through. We
+  // mint one stable key per distinct code and reuse it for every retry
+  // of that code — the BE then de-dups a retried open instead of
+  // starting a second session / double-charging. A different sticker
+  // (different code) gets its own key. Pre-fix the axios interceptor
+  // minted a fresh UUID per POST, defeating the dedup entirely.
+  const idempotencyByCodeRef = useRef<{ code: string; key: string } | null>(null);
+
+  // Same dedup intent for the Shell-claim path: one stable key per
+  // distinct claim id so a re-tap / flaky-network retry of the same
+  // login QR binds the client once, not twice.
+  const claimIdempotencyRef = useRef<{ claimId: string; key: string } | null>(null);
 
   const noActiveTenant = !currentTenantId;
   const hasClubs = (clubs?.length ?? 0) > 0;
@@ -127,67 +159,118 @@ export default function QrScanScreen() {
   // Parse helper preserved from the previous revision — pulled into
   // a stable callback so the Suspense boundary doesn't see its
   // identity change on every render.
-  const parseQr = useCallback((raw: string): { code: string } | null => {
-    let text = raw.trim();
-    if (!text) return null;
-    if (
-      (text.startsWith("'") && text.endsWith("'")) ||
-      (text.startsWith('"') && text.endsWith('"'))
-    ) {
-      text = text.slice(1, -1).trim();
-    }
-    try {
-      const u = new URL(text);
-      const codeParam = u.searchParams.get('code') ?? u.searchParams.get('id');
-      if (codeParam) return { code: codeParam };
-    } catch {
-      // Not a URL — fall through.
-    }
-    const jsonStart = text.indexOf('{');
-    const jsonEnd = text.lastIndexOf('}');
-    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-      let jsonCandidate = text.slice(jsonStart, jsonEnd + 1);
-      jsonCandidate = jsonCandidate
-        .replace(/[“”„‟″‶]/g, '"')
-        .replace(/[‘’‚‛′‵]/g, "'");
-      try {
-        const obj = JSON.parse(jsonCandidate) as Record<string, unknown>;
-        const lcMap: Record<string, unknown> = {};
-        for (const k of Object.keys(obj)) lcMap[k.toLowerCase()] = obj[k];
-        const findKey = (...keys: string[]): unknown => {
-          for (const k of keys) {
-            const v = lcMap[k.toLowerCase()];
-            if (v != null) return v;
-          }
-          return null;
-        };
-        const labelRaw =
-          findKey('pc_code', 'pccode') ??
-          findKey('pc_id', 'pcid', 'id') ??
-          findKey('code', 'qr_code', 'qrcode');
-        const labelStr = String(labelRaw ?? '').trim();
-        if (labelStr.length > 0) return { code: labelStr };
-      } catch {
-        // Malformed JSON — fall through.
+  //
+  // The parser returns a discriminated union so `handleScanned` can
+  // branch on the QR's intent:
+  //   • `{ kind: 'claim', claimId }` — a Shell login QR
+  //     (`nexora://claim?cid=<uuid>`). The signed-in client claims the
+  //     seat's pending Shell session; no billable open happens here.
+  //   • `{ kind: 'pc', code, tenantId }` — a printed PC sticker (URL,
+  //     JSON, or bare code form). Opens the PC and starts a session.
+  //
+  // SEC: the `pc` branch surfaces a `tenantId` when the sticker /
+  // payload carries one. `myQrPayload` above mints stickers with a
+  // `tenant_id` param, but the scan side used to drop it and pass only
+  // the raw `code` to `openByQr`. Because the tenant is implied by the
+  // caller's `client_token`, scanning club B's sticker while logged in
+  // at club A would open *club A's* "PC-01" (both clubs can have one) —
+  // silently billing the wrong club. `handleScanned` now compares this
+  // `tenantId` against `currentTenantId` and refuses the cross-tenant
+  // open. Legacy stickers without a tenant stay backward-compatible
+  // (`tenantId` is null → no comparison, open as before).
+  const parseQr = useCallback(
+    (raw: string): ParsedQr | null => {
+      let text = raw.trim();
+      if (!text) return null;
+      if (
+        (text.startsWith("'") && text.endsWith("'")) ||
+        (text.startsWith('"') && text.endsWith('"'))
+      ) {
+        text = text.slice(1, -1).trim();
       }
-    }
-    if (
-      text.length > 0 &&
-      text.length <= 64 &&
-      !text.includes('{') &&
-      !text.includes('=') &&
-      !text.includes(' ') &&
-      !text.includes('://')
-    ) {
-      return { code: text };
-    }
-    const lenientMatch =
-      text.match(/(?:^|[,;&\s])id\s*=\s*([^\s,;&"']+)/i) ??
-      text.match(/['"]id['"]\s*:\s*['"]([^'"]+)['"]/i) ??
-      text.match(/['"]code['"]\s*:\s*['"]([^'"]+)['"]/i);
-    if (lenientMatch?.[1]) return { code: lenientMatch[1].trim() };
-    return null;
-  }, []);
+      // Coerce a raw param/field value into a positive integer tenant id;
+      // anything non-numeric or <= 0 is treated as absent.
+      const toTenantId = (v: unknown): number | null => {
+        if (v == null) return null;
+        const n = Number(String(v).trim());
+        return Number.isInteger(n) && n > 0 ? n : null;
+      };
+
+      // Shell login QR — `nexora://claim?cid=<uuid>`. Matched before
+      // the generic URL branch: Hermes' `URL` parses custom schemes but
+      // exposes the query inconsistently for non-http(s) URIs, so we
+      // pull `cid` ourselves with a scheme-anchored regex instead of
+      // trusting `searchParams`. Case-insensitive on the scheme/host;
+      // `cid` is the only field the preview payload carries today.
+      const claimMatch = text.match(/^nexora:\/\/claim\b[^]*?[?&]cid=([^&\s]+)/i);
+      if (claimMatch?.[1]) {
+        // Decode percent-escapes defensively; reject an empty result.
+        let claimId = claimMatch[1].trim();
+        try {
+          claimId = decodeURIComponent(claimId);
+        } catch {
+          // Leave the raw value if it isn't valid percent-encoding.
+        }
+        if (claimId) return { kind: 'claim', claimId };
+        return null;
+      }
+
+      try {
+        const u = new URL(text);
+        const codeParam = u.searchParams.get('code') ?? u.searchParams.get('id');
+        const tenantId = toTenantId(u.searchParams.get('tenant_id'));
+        if (codeParam) return { kind: 'pc', code: codeParam, tenantId };
+      } catch {
+        // Not a URL — fall through.
+      }
+      const jsonStart = text.indexOf('{');
+      const jsonEnd = text.lastIndexOf('}');
+      if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+        let jsonCandidate = text.slice(jsonStart, jsonEnd + 1);
+        jsonCandidate = jsonCandidate
+          .replace(/[“”„‟″‶]/g, '"')
+          .replace(/[‘’‚‛′‵]/g, "'");
+        try {
+          const obj = JSON.parse(jsonCandidate) as Record<string, unknown>;
+          const lcMap: Record<string, unknown> = {};
+          for (const k of Object.keys(obj)) lcMap[k.toLowerCase()] = obj[k];
+          const findKey = (...keys: string[]): unknown => {
+            for (const k of keys) {
+              const v = lcMap[k.toLowerCase()];
+              if (v != null) return v;
+            }
+            return null;
+          };
+          const labelRaw =
+            findKey('pc_code', 'pccode') ??
+            findKey('pc_id', 'pcid', 'id') ??
+            findKey('code', 'qr_code', 'qrcode');
+          const tenantId = toTenantId(findKey('tenant_id', 'tenantid'));
+          const labelStr = String(labelRaw ?? '').trim();
+          if (labelStr.length > 0) return { kind: 'pc', code: labelStr, tenantId };
+        } catch {
+          // Malformed JSON — fall through.
+        }
+      }
+      if (
+        text.length > 0 &&
+        text.length <= 64 &&
+        !text.includes('{') &&
+        !text.includes('=') &&
+        !text.includes(' ') &&
+        !text.includes('://')
+      ) {
+        return { kind: 'pc', code: text, tenantId: null };
+      }
+      const lenientMatch =
+        text.match(/(?:^|[,;&\s])id\s*=\s*([^\s,;&"']+)/i) ??
+        text.match(/['"]id['"]\s*:\s*['"]([^'"]+)['"]/i) ??
+        text.match(/['"]code['"]\s*:\s*['"]([^'"]+)['"]/i);
+      if (lenientMatch?.[1]) return { kind: 'pc', code: lenientMatch[1].trim(), tenantId: null };
+      return null;
+    },
+    [],
+  );
 
   const handleScanned = useCallback(
     async (raw: string) => {
@@ -196,14 +279,110 @@ export default function QrScanScreen() {
         return;
       }
       const parsed = parseQr(raw);
-      if (!parsed || !parsed.code) {
+      if (!parsed) {
         toast.error(t.qrScan.invalidFormat);
         return;
       }
       if (submitting) return;
+
+      // Shell login QR — bind this signed-in client to the seat's
+      // pending Shell session, then tell the user to look at the screen
+      // (the Shell polls the claim id and logs them in). No billable
+      // open and no cross-tenant guard: the bind is resolved against the
+      // active `client_token`'s tenant on the BE; a claim id from a
+      // different club simply won't match and comes back `not_found`.
+      if (parsed.kind === 'claim') {
+        setSubmitting(true);
+        try {
+          // Reuse one key per distinct claim id so a re-tap / retry of
+          // the same scan can't register two binds.
+          const cached = claimIdempotencyRef.current;
+          const idempotencyKey =
+            cached && cached.claimId === parsed.claimId
+              ? cached.key
+              : generateIdempotencyKey();
+          claimIdempotencyRef.current = { claimId: parsed.claimId, key: idempotencyKey };
+
+          await pcsApi.claimPc(parsed.claimId, idempotencyKey);
+          if (Platform.OS !== 'web') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          }
+          await dialog.alert({
+            title: t.qrScan.headerTitle,
+            message: t.qrScan.qrClaimSuccess,
+            confirmLabel: t.common.ok,
+            variant: 'success',
+          });
+          router.back();
+        } catch (e) {
+          // Map the BE's `expired` signal to specific copy; everything
+          // else (`not_found`, network, malformed) falls back to the
+          // generic claim error.
+          const beMessage = getErrorMessage(e).toLowerCase();
+          const message = beMessage.includes('expir')
+            ? t.qrScan.qrClaimExpired
+            : t.qrScan.qrClaimError;
+          await dialog.alert({
+            title: t.qrScan.headerTitle,
+            message,
+            confirmLabel: t.common.ok,
+            variant: 'warning',
+          });
+        } finally {
+          setSubmitting(false);
+        }
+        return;
+      }
+
+      // SEC: cross-tenant guard. `openByQr` resolves the PC inside the
+      // tenant tied to the active `client_token`, so a `code` collision
+      // across clubs (every club tends to have a "PC-01") would open the
+      // *wrong* club's seat and bill there. When the sticker advertises
+      // its `tenant_id`, refuse any open whose tenant differs from the
+      // active one. If the user is actually a member of the scanned
+      // club, offer to switch into it and continue; otherwise it's a
+      // sticker from a club they don't belong to — hard stop. Legacy
+      // stickers (`tenantId === null`) keep the old behaviour.
+      if (parsed.tenantId != null && parsed.tenantId !== currentTenantId) {
+        const targetClub = uniqueClubs.find((c) => c.tenant_id === parsed.tenantId);
+        if (targetClub) {
+          const switchOk = await dialog.confirm({
+            title: t.qrScan.wrongClubTitle,
+            message: t.qrScan.wrongClubSwitch.replace('{club}', targetClub.tenant_name),
+            confirmLabel: t.qrScan.wrongClubSwitchCta,
+            cancelLabel: t.common.cancel,
+            variant: 'warning',
+          });
+          if (!switchOk) return;
+          try {
+            await switchClub(parsed.tenantId);
+          } catch (e) {
+            toast.error(getErrorMessage(e));
+            return;
+          }
+        } else {
+          await dialog.alert({
+            title: t.qrScan.wrongClubTitle,
+            message: t.qrScan.wrongClubNotMember,
+            confirmLabel: t.common.ok,
+            variant: 'warning',
+          });
+          return;
+        }
+      }
+
       setSubmitting(true);
       try {
-        await pcsApi.openByQr({ code: parsed.code });
+        // Reuse the key for this exact code across retries; mint a
+        // fresh one only when a different sticker is scanned.
+        const cached = idempotencyByCodeRef.current;
+        const idempotencyKey =
+          cached && cached.code === parsed.code
+            ? cached.key
+            : generateIdempotencyKey();
+        idempotencyByCodeRef.current = { code: parsed.code, key: idempotencyKey };
+
+        await pcsApi.openByQr({ code: parsed.code }, idempotencyKey);
         if (Platform.OS !== 'web') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         }
@@ -214,7 +393,7 @@ export default function QrScanScreen() {
         setSubmitting(false);
       }
     },
-    [noActiveTenant, parseQr, submitting, t, toast],
+    [noActiveTenant, parseQr, submitting, currentTenantId, uniqueClubs, dialog, switchClub, t, toast],
   );
 
   const onCameraScan = useCallback(

@@ -33,6 +33,7 @@ import * as authApi from '../lib/api/services/auth';
 // hitting the BE and getting a generic toast back.
 const NAME_MAX_LENGTH = 64;
 const PHONE_MAX_LENGTH = 32;
+const BIRTH_DATE_MAX_LENGTH = 10;
 
 // Avatar upload constraints — MUST match the BE validator in
 // MobileAuthController::uploadAvatar:
@@ -68,6 +69,7 @@ function ProfileEditInner() {
   const [firstName, setFirstName] = useState(user?.first_name ?? '');
   const [lastName, setLastName] = useState(user?.last_name ?? '');
   const [phone, setPhone] = useState(user?.phone ?? '');
+  const [birthDate, setBirthDate] = useState(user?.birth_date ?? '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url ?? '');
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -269,12 +271,17 @@ function ProfileEditInner() {
     const trimmedFirst = firstName.trim();
     const trimmedLast = lastName.trim();
     const trimmedPhone = phone.trim();
+    const trimmedBirthDate = birthDate.trim();
     if (trimmedFirst.length > NAME_MAX_LENGTH || trimmedLast.length > NAME_MAX_LENGTH) {
       toast.error(t.profileEdit.nameTooLong);
       return;
     }
     if (trimmedPhone.length > PHONE_MAX_LENGTH) {
       toast.error(t.profileEdit.phoneTooLong);
+      return;
+    }
+    if (trimmedBirthDate !== '' && !isValidBirthDate(trimmedBirthDate)) {
+      toast.error(t.profileEdit.birthDateInvalid);
       return;
     }
 
@@ -284,6 +291,7 @@ function ProfileEditInner() {
         first_name: trimmedFirst || null,
         last_name: trimmedLast || null,
         phone: trimmedPhone || null,
+        birth_date: trimmedBirthDate || null,
         avatar_url: avatarUrl.trim() || null,
       });
       toast.success(t.profileEdit.successToast);
@@ -419,6 +427,21 @@ function ProfileEditInner() {
             />
           </View>
           <Text style={styles.hint}>{t.profileEdit.phoneHint}</Text>
+
+          <Text style={styles.label}>{t.profileEdit.birthDate}</Text>
+          <View style={styles.inputWrap}>
+            <TextInput
+              style={styles.input}
+              value={birthDate}
+              onChangeText={(next) => setBirthDate(next.replace(/[^\d-]/g, '').slice(0, BIRTH_DATE_MAX_LENGTH))}
+              placeholder={t.profileEdit.birthDatePlaceholder}
+              placeholderTextColor="#6B7280"
+              keyboardType="numbers-and-punctuation"
+              maxLength={BIRTH_DATE_MAX_LENGTH}
+              returnKeyType="done"
+            />
+          </View>
+          <Text style={styles.hint}>{t.profileEdit.birthDateHint}</Text>
         </ScrollView>
 
         <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -589,3 +612,20 @@ const saveBtnStyles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 });
+
+function isValidBirthDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() + 1 !== month ||
+    parsed.getUTCDate() !== day
+  ) {
+    return false;
+  }
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  return parsed <= todayUtc;
+}

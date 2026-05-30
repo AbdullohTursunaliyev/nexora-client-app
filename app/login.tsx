@@ -76,6 +76,8 @@ export default function LoginScreen() {
   const [code, setCode] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [referralCode, setReferralCode] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [signupToken, setSignupToken] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
   const [resendCountdown, setResendCountdown] = useState(0);
@@ -107,7 +109,13 @@ export default function LoginScreen() {
     setSubmitting(true);
     try {
       const res = await requestPhoneCode(normalisedPhone);
-      setDevCode(res.dev_code ?? null);
+      // SECURITY: only ever surface the dev OTP echo in DEV builds. If
+      // the SMS gateway is down and the BE falls back to returning
+      // `dev_code` in a production response, rendering it here would
+      // print the OTP on the login screen for anyone holding the phone
+      // — defeating the entire purpose of the code. The FE gate is the
+      // hard guarantee; we don't trust the BE to withhold it.
+      setDevCode(__DEV__ ? (res.dev_code ?? null) : null);
       // FE-side resend cooldown is shorter than the OTP TTL — the
       // code itself stays valid for 5 min server-side, but we don't
       // want the user mashing "resend" every couple of seconds. 60s
@@ -167,6 +175,11 @@ export default function LoginScreen() {
       toast.error(t.login.errorFirstName);
       return;
     }
+    const cleanBirthDate = birthDate.trim();
+    if (cleanBirthDate !== '' && !isValidBirthDate(cleanBirthDate)) {
+      toast.error(t.login.errorBirthDate);
+      return;
+    }
     if (!signupToken) {
       // Defensive — we should always have a signup_token when on
       // this phase, but if state was somehow lost (deep link?) send
@@ -180,6 +193,8 @@ export default function LoginScreen() {
         signupToken,
         firstName.trim(),
         lastName.trim() || null,
+        referralCode.trim() || null,
+        cleanBirthDate || null,
       );
       toast.success(t.login.registeredToast);
       router.replace('/(tabs)');
@@ -188,7 +203,7 @@ export default function LoginScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [firstName, lastName, registerWithPhone, signupToken, t, toast]);
+  }, [birthDate, firstName, lastName, referralCode, registerWithPhone, signupToken, t, toast]);
 
   // Resend countdown — ticks the displayed timer down once per
   // second so the user sees a precise countdown ("Resend in 0:42")
@@ -313,8 +328,12 @@ export default function LoginScreen() {
                 t={t}
                 firstName={firstName}
                 lastName={lastName}
+                referralCode={referralCode}
+                birthDate={birthDate}
                 onFirstNameChange={setFirstName}
                 onLastNameChange={setLastName}
+                onReferralCodeChange={(next) => setReferralCode(next.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 32))}
+                onBirthDateChange={(next) => setBirthDate(next.replace(/[^\d-]/g, '').slice(0, 10))}
                 onSubmit={onFinishRegister}
                 submitting={submitting}
               />
@@ -537,8 +556,12 @@ interface RegisterStepProps {
   t: ReturnType<typeof useT>;
   firstName: string;
   lastName: string;
+  referralCode: string;
+  birthDate: string;
   onFirstNameChange: (next: string) => void;
   onLastNameChange: (next: string) => void;
+  onReferralCodeChange: (next: string) => void;
+  onBirthDateChange: (next: string) => void;
   onSubmit: () => void;
   submitting: boolean;
 }
@@ -547,8 +570,12 @@ function RegisterStep({
   t,
   firstName,
   lastName,
+  referralCode,
+  birthDate,
   onFirstNameChange,
   onLastNameChange,
+  onReferralCodeChange,
+  onBirthDateChange,
   onSubmit,
   submitting,
 }: RegisterStepProps) {
@@ -577,6 +604,29 @@ function RegisterStep({
         placeholderTextColor="#5A6A85"
         autoCapitalize="words"
         maxLength={64}
+        returnKeyType="done"
+        onSubmitEditing={onSubmit}
+      />
+      <View style={styles.inputGap} />
+      <TextInput
+        style={styles.textInput}
+        value={referralCode}
+        onChangeText={onReferralCodeChange}
+        placeholder={t.login.referralCodePlaceholder}
+        placeholderTextColor="#5A6A85"
+        autoCapitalize="characters"
+        maxLength={32}
+        returnKeyType="next"
+      />
+      <View style={styles.inputGap} />
+      <TextInput
+        style={styles.textInput}
+        value={birthDate}
+        onChangeText={onBirthDateChange}
+        placeholder={t.login.birthDatePlaceholder}
+        placeholderTextColor="#5A6A85"
+        keyboardType="numbers-and-punctuation"
+        maxLength={10}
         returnKeyType="done"
         onSubmitEditing={onSubmit}
       />
@@ -732,6 +782,23 @@ function prettifyPhone(canonical: string): string {
 /** Cheap "looks like an Uzbek phone" check for client-side gating. */
 function isValidUzPhone(canonical: string): boolean {
   return canonical.length === 12 && canonical.startsWith('998');
+}
+
+function isValidBirthDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() + 1 !== month ||
+    parsed.getUTCDate() !== day
+  ) {
+    return false;
+  }
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  return parsed <= todayUtc;
 }
 
 /** mm:ss countdown for the resend timer. Always at least "0:00". */
@@ -1030,4 +1097,3 @@ const styles = StyleSheet.create({
     color: '#00CFFF',
   },
 });
-

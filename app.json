@@ -63,7 +63,8 @@
           "cameraPermission": "Avatar uchun rasm olish uchun kamera kerak."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-web-browser"
     ]
   }
 }

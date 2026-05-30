@@ -27,6 +27,7 @@ import type {
   FriendRequest,
   FriendSearchResult,
   FriendRelationStatus,
+  FriendActivityItem,
 } from '../lib/api/services/friends';
 import UsersIcon from '../components/icons/UsersIcon';
 import MailIcon from '../components/icons/MailIcon';
@@ -115,6 +116,40 @@ export default function FriendsListScreen() {
   useEffect(() => {
     void loadFriends();
   }, [loadFriends]);
+
+  // Live activity rollup — polled every ~12 s while the "mine" tab
+  // is visible. Stops polling when the user switches to search
+  // (saves bandwidth) and resumes on tab change. The activity payload
+  // is keyed by mobile_user_id so the UI overlay below joins it to
+  // the friends list by `friend.id === activity.mobile_user_id`.
+  const [activity, setActivity] = useState<
+    Record<number, FriendActivityItem>
+  >({});
+  useEffect(() => {
+    if (tab !== 'mine') return;
+    let cancelled = false;
+    const fetchOnce = async () => {
+      try {
+        const rows = await friendsApi.friendActivity();
+        if (cancelled) return;
+        const map: Record<number, FriendActivityItem> = {};
+        for (const row of rows) {
+          map[row.id] = row;
+        }
+        setActivity(map);
+      } catch {
+        // Activity is informational — a failed poll shouldn't bother
+        // the user with a toast. Keep the previous snapshot until
+        // the next tick succeeds.
+      }
+    };
+    void fetchOnce();
+    const id = setInterval(fetchOnce, 12_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [tab]);
 
   const onSearch = async () => {
     const q = query.trim();
@@ -418,19 +453,32 @@ export default function FriendsListScreen() {
               friends.map((u) => {
                 const name = displayNameOf(u);
                 const isActing = actingIds.has(u.id);
+                const act = activity[u.id] ?? null;
+                const isLive = act?.status === 'in_session';
                 return (
                   <View key={u.id} style={styles.userCard}>
-                    <AvatarTile uri={u.avatar_url} name={name} />
+                    <View style={styles.avatarWrap}>
+                      <AvatarTile uri={u.avatar_url} name={name} />
+                      {/* Live dot — only painted when the friend is
+                          actively playing somewhere. Pull-from-polling
+                          via the activity map above. */}
+                      {isLive && <View style={styles.liveDot} />}
+                    </View>
                     <View style={styles.userInfo}>
-                      <Text style={styles.userName}>{name}</Text>
-                      <Text style={styles.userLogin}>@{u.login}</Text>
+                      <Text style={styles.userName} numberOfLines={1}>{name}</Text>
+                      {isLive && act?.current_club && act?.current_pc ? (
+                        <Text style={styles.userLive} numberOfLines={1}>
+                          {t.friends.playingNow
+                            .replace('{pc}', act.current_pc.code)
+                            .replace('{club}', act.current_club.tenant_name)}
+                        </Text>
+                      ) : (
+                        <Text style={styles.userLogin} numberOfLines={1}>@{u.login}</Text>
+                      )}
                     </View>
                     {isActing ? (
                       <ActivityIndicator color={Colors.primary} />
                     ) : (
-                      // Remove-friend ghost cyan label — destructive
-                      // action gated by a confirm dialog upstream, so
-                      // the visible affordance stays quiet.
                       <TouchableOpacity
                         activeOpacity={0.7}
                         onPress={() => onRemove(u.id, name)}
@@ -475,9 +523,6 @@ export default function FriendsListScreen() {
                 value={query}
                 onChangeText={(v) => {
                   setQuery(v);
-                  // Reset has-searched when the input is cleared so
-                  // the "type to search" prompt comes back instead
-                  // of leaving the previous "no results" empty card.
                   if (v.trim().length === 0) {
                     setResults([]);
                     setHasSearched(false);
@@ -487,6 +532,13 @@ export default function FriendsListScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 returnKeyType="search"
+                // Hint the OS to surface the digit-friendly keyboard
+                // by default. Users can still type letters for name
+                // search (the BE branches on input shape: 6+ digits
+                // → phone match, anything else → name/login). iOS
+                // honours `phone-pad` while still letting the user
+                // switch to the alphabetic layout from the bar.
+                keyboardType="phone-pad"
                 maxLength={64}
                 editable={!searching}
               />
@@ -827,12 +879,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Wrapper around the avatar so the "currently playing" pulse dot
+  // can absolute-position onto the bottom-right corner without
+  // moving the avatar itself in the row layout.
+  avatarWrap: {
+    position: 'relative',
+  },
+  liveDot: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
+    borderColor: '#141823',
+  },
   userInfo: { flex: 1 },
   userName: { fontFamily: Fonts.inter.semiBold, fontSize: 13.5, color: Colors.text },
   userLogin: {
     fontFamily: Fonts.inter.regular,
     fontSize: 11.5,
     color: '#8B95A8',
+    marginTop: 2,
+  },
+  // "Playing PC-04 at Cyberium" line shown in place of @login when
+  // the friend has a live session. Green tint matches the dot so the
+  // two cues read as a unit.
+  userLive: {
+    fontFamily: Fonts.inter.medium,
+    fontSize: 11.5,
+    color: '#22C55E',
     marginTop: 2,
   },
   // Status pills for relation_status states that don't have an

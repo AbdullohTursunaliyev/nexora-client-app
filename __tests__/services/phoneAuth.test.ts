@@ -104,6 +104,8 @@ describe('phoneAuth service', () => {
       signup_token: 'enc-abc',
       first_name: 'Akmal',
       last_name: 'Karimov',
+      referral_code: null,
+      birth_date: null,
     });
     expect(tokens.setMobileToken).toHaveBeenCalledWith('mt-fresh-1');
   });
@@ -123,6 +125,8 @@ describe('phoneAuth service', () => {
       signup_token: 'enc-xyz',
       first_name: null,
       last_name: null,
+      referral_code: null,
+      birth_date: null,
     });
   });
 });

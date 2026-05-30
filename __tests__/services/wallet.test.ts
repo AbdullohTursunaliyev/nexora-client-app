@@ -73,4 +73,81 @@ describe('wallet service', () => {
     });
     expect(out.transaction_id).toBe(9);
   });
+
+  test('getPaymentMethods returns the ordered methods array', async () => {
+    mockedGet.mockResolvedValueOnce({ data: { methods: ['payme', 'click'] } });
+
+    const out = await wallet.getPaymentMethods();
+
+    expect(mockedGet).toHaveBeenCalledWith('/client-auth/payment-methods');
+    expect(out).toEqual(['payme', 'click']);
+  });
+
+  test('getPaymentMethods returns [] when the club configured none', async () => {
+    mockedGet.mockResolvedValueOnce({ data: { methods: [] } });
+
+    const out = await wallet.getPaymentMethods();
+
+    expect(mockedGet).toHaveBeenCalledWith('/client-auth/payment-methods');
+    expect(out).toEqual([]);
+  });
+
+  test('getPaymentMethods degrades to [] on a malformed body', async () => {
+    // BE never SHOULD send this, but a missing `methods` key must not
+    // crash the screen on `.map` — guard mirrors listCards/listTransactions.
+    mockedGet.mockResolvedValueOnce({ data: {} });
+
+    const out = await wallet.getPaymentMethods();
+
+    expect(out).toEqual([]);
+  });
+
+  test('createTopupOrder posts amount + provider and maps snake_case', async () => {
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        order_id: 'ord_42',
+        provider: 'click',
+        amount: 50000,
+        checkout_url: 'https://my.click.uz/checkout/ord_42',
+        status: 'pending',
+      },
+    });
+
+    const out = await wallet.createTopupOrder(50000, 'click');
+
+    expect(mockedPost).toHaveBeenCalledWith('/client-auth/topup', {
+      amount: 50000,
+      provider: 'click',
+    });
+    expect(out).toEqual({
+      orderId: 'ord_42',
+      provider: 'click',
+      amount: 50000,
+      checkoutUrl: 'https://my.click.uz/checkout/ord_42',
+      status: 'pending',
+    });
+  });
+
+  test('getTopupStatus hits the order URL and maps snake_case', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        order_id: 'ord_42',
+        status: 'paid',
+        paid: true,
+        provider: 'payme',
+        amount: 20000,
+      },
+    });
+
+    const out = await wallet.getTopupStatus('ord_42');
+
+    expect(mockedGet).toHaveBeenCalledWith('/client-auth/topup/ord_42');
+    expect(out).toEqual({
+      orderId: 'ord_42',
+      status: 'paid',
+      paid: true,
+      provider: 'payme',
+      amount: 20000,
+    });
+  });
 });

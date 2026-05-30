@@ -71,6 +71,14 @@ authEvents.on('auth:unauthorized', () => {
 authEvents.on('auth:logout', () => {
   clearDiscoverCache();
 });
+// And on club switch: the `joined` flag is evaluated against the
+// active tenant, so switching clubs must drop the cache or the
+// discover list keeps the previous club's membership badges. Pre-fix
+// this rode on the `auth:logout` that switchClub emitted; the event
+// is now split (see the AuthEvent docblock in `client.ts`).
+authEvents.on('auth:tenant-switched', () => {
+  clearDiscoverCache();
+});
 
 interface DiscoverApiClub {
   id: string;

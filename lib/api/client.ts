@@ -31,8 +31,22 @@ import type { ApiError } from './types';
  *     — caches stayed warm after an explicit logout, and the next
  *     user's first list call could briefly show the previous user's
  *     data until the TTL expired.
+ *   • `auth:tenant-switched` — fired by AuthProvider's `switchClub`
+ *     when the user changes the active club. The session (and the
+ *     mobile_token) survives — only the tenant-scoped data is stale
+ *     now. ONLY tenant-scoped in-memory caches (pcs catalog, discover
+ *     `joined` flags) subscribe so the next list call hits the new
+ *     tenant's rows instead of the previous tenant's 30s TTL window.
+ *     Pre-fix `switchClub` reused `auth:logout` to flush these caches,
+ *     which over-fired: device-scoped state that legitimately persists
+ *     across a club switch (favourites, the booking-flow zone pick)
+ *     also subscribes to `auth:logout` and got wiped on every club
+ *     change. Worse, it coupled "switch club" to "logout" — the day
+ *     `auth:logout` grows a "drop the token" side-effect, switching
+ *     clubs would silently sign the user out. Splitting the event
+ *     keeps cache-invalidation and session-teardown on separate buses.
  */
-type AuthEvent = 'auth:unauthorized' | 'auth:logout';
+type AuthEvent = 'auth:unauthorized' | 'auth:logout' | 'auth:tenant-switched';
 type AuthListener = () => void;
 
 class AuthEventBus {
@@ -195,6 +209,26 @@ const CLIENT_AUTH_PREFIXES = [
   // re-login → home empty until pull-to-refresh.
   '/mobile/packages',
   '/mobile/booking/slots',
+  // Added 2026-05-30: mobile QR-login claim. The Shell shows a login QR
+  // (`nexora://claim?cid=<uuid>`); the signed-in client scans it and
+  // POSTs the claim id to bind itself to that seat's pending Shell
+  // session. The bind is tenant-scoped (the BE reads `tenant_id` from
+  // the `client.auth` middleware to resolve which club's Shell is
+  // claiming), so it MUST carry the per-tenant client_token. Without
+  // this prefix the interceptor attaches the mobile_token, the BE
+  // 401's, and the response interceptor treats it as a dead mobile
+  // session — bouncing the user to /login mid-scan.
+  '/mobile/qr-claim',
+  // Added 2026-05-30: self-service wallet top-up (Payme/Click). The
+  // `/client-auth/*` routes (payment-methods, topup, topup/{order})
+  // are mounted in the `client.auth` middleware group on the BE — they
+  // resolve the configured PSP providers + create the pending top-up
+  // order from the per-tenant `tenant_id`, so they MUST carry the
+  // per-tenant client_token. Without this prefix the interceptor
+  // attaches the mobile_token, the BE 401's, and the response
+  // interceptor treats it as a dead mobile session — bouncing the user
+  // to /login the moment they open the top-up screen.
+  '/client-auth',
 ];
 
 function needsClientToken(url: string): boolean {
@@ -210,8 +244,21 @@ function needsClientToken(url: string): boolean {
  * server already wrote the row. Without an idempotency key the FE can't
  * safely retry — it might double-charge a top-up or double-book a PC.
  * The backend should de-dup by Idempotency-Key (FE-M14 follow-up).
+ *
+ * IMPORTANT — money/booking flows must mint the key ONCE per logical
+ * operation and reuse it across retries, NOT per HTTP attempt. The
+ * request interceptor below generates a fresh key only when the caller
+ * hasn't supplied one (`config.headers['Idempotency-Key']`); for the
+ * pay/book paths the caller (`app/payment.tsx::onConfirm`,
+ * `app/qr-scan.tsx::handleScanned`) creates a single key at the start
+ * of the attempt and hands it to `bookPc` / `openByQr`, so a retry or
+ * a double-tap reuses the same key and the BE can de-dup. Exported for
+ * those callers (and so a Jest test can assert the reuse contract).
+ * Pre-fix the interceptor minted a brand-new UUID on every POST, which
+ * meant the server could never recognise a retried charge as a
+ * duplicate — the "we have idempotency" claim was hollow.
  */
-function generateIdempotencyKey(): string {
+export function generateIdempotencyKey(): string {
   // Crypto-grade UUIDs aren't available cross-platform; this is a v4
   // pattern good enough for de-dup keying (collision space ~5.3 × 10^36).
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -245,8 +292,14 @@ api.interceptors.request.use(
 
     // Tag every state-changing request with an Idempotency-Key. The
     // backend can use it to de-dup retried POSTs after a flaky network
-    // (FE-M14). GETs are already idempotent. We don't overwrite an
-    // explicit key the caller may have passed.
+    // (FE-M14). GETs are already idempotent.
+    //
+    // Caller-supplied keys win: money/booking flows pass a key that
+    // stays STABLE across retries + double-taps (see
+    // generateIdempotencyKey docblock), so we must NOT overwrite it.
+    // Only when no key was supplied do we mint a per-request fallback —
+    // good enough for non-critical state changes (e.g. marking a
+    // notification read) where retry de-dup isn't safety-critical.
     const method = (config.method ?? 'get').toLowerCase();
     if (
       (method === 'post' || method === 'put' || method === 'patch' || method === 'delete') &&

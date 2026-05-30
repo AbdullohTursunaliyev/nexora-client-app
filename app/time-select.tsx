@@ -26,10 +26,23 @@ import { getErrorMessage } from '../lib/api/client';
 import * as packagesApi from '../lib/api/services/packages';
 import type { PackageItem, BookingSlot } from '../lib/api/services/packages';
 import { useSelectedZone } from '../lib/state/useSelectedZone';
+import WalletIcon from '../components/icons/WalletIcon';
 
 function formatPriceLabel(amount: number, unit: string): string {
   return `${amount.toLocaleString('ru-RU').replace(/,/g, ' ')} ${unit}`;
 }
+
+/**
+ * Sentinel id for the "pay from club balance" pseudo-package. The
+ * time-select package list mixes this synthetic card with real
+ * BE-served packages so the user can opt into hourly billing from
+ * the same picker. The value is intentionally negative so it can't
+ * collide with a real packages.id (which is always positive
+ * auto-increment). The continue handler short-circuits on this id
+ * and forwards an empty packageId to /payment, which then uses its
+ * zone-price × duration fallback for balance billing.
+ */
+const BALANCE_PSEUDO_ID = -1;
 
 /**
  * Pick an icon + colour scheme for a package based on its duration.
@@ -78,10 +91,13 @@ export default function TimeSelectScreen() {
   // Audit finding #10.
   const { beZoneId } = useSelectedZone();
 
-  // Tab state was removed earlier (the Hourly tab was a dead switch
-  // duplicating the package list). Kept as a single-column package
-  // picker. Selected package id is the local pkg id from BE.
-  const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+  // `selectedPackageId` is either a real BE package id, BALANCE_PSEUDO_ID
+  // for hourly-from-balance, or null for "nothing picked yet".
+  // Default to the balance option so a user who lands on this screen
+  // sees a sensible default highlighted instead of "nothing chosen".
+  const [selectedPackageId, setSelectedPackageId] = useState<number | null>(
+    BALANCE_PSEUDO_ID,
+  );
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
 
   // Real BE data — replaces the previously hardcoded `PACKAGES` array
@@ -110,13 +126,10 @@ export default function TimeSelectScreen() {
       .then((list) => {
         if (cancelled) return;
         setPackages(list);
-        // Auto-pick the first (cheapest) package so the user always
-        // has a default selection when slots load below — matches the
-        // earlier UX where the hardcoded list always had a default
-        // implied.
-        if (list.length > 0 && selectedPackageId == null) {
-          setSelectedPackageId(list[0].id);
-        }
+        // Leave the default selection on the balance option. The
+        // user can switch to a package if they want fixed-price
+        // billing; otherwise hourly-from-balance is a safe default
+        // (no upfront commit, no surprise charges).
       })
       .catch((e) => {
         if (cancelled) return;
@@ -134,23 +147,32 @@ export default function TimeSelectScreen() {
 
   // Selected package object — derived. Used to feed the slots request
   // with the right duration so a 3-hour package doesn't show slots
-  // that don't fit before close.
+  // that don't fit before close. `null` when the user picked the
+  // balance pseudo-option; downstream code uses the default 60-min
+  // duration for slot scoping and forwards an empty packageId to
+  // /payment so it runs balance billing instead of a package-pinned
+  // booking.
   const selectedPackage = useMemo(
     () => packages.find((p) => p.id === selectedPackageId) ?? null,
     [packages, selectedPackageId],
   );
+  const isBalanceMode = selectedPackageId === BALANCE_PSEUDO_ID;
 
-  // Fetch slots whenever the selected package changes.
+  // Fetch slots whenever the selected option changes. Balance mode
+  // uses a 60-minute default duration for slot scoping; package
+  // mode uses the package's own duration so the BE can drop slots
+  // that don't fit before closing time.
   useEffect(() => {
-    if (!selectedPackage) {
+    if (!selectedPackage && !isBalanceMode) {
       setSlots([]);
       return;
     }
+    const durationMin = selectedPackage?.duration_min ?? 60;
     let cancelled = false;
     setSlotsLoading(true);
     packagesApi
       .listBookingSlots({
-        durationMin: selectedPackage.duration_min,
+        durationMin,
         // Numeric BE zone id when seat-select has resolved it (which
         // it has, since the booking flow runs zone → seat → time).
         // Without it the BE returns slots scoped to the tenant's
@@ -184,7 +206,7 @@ export default function TimeSelectScreen() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPackage?.id]);
+  }, [selectedPackage?.id, isBalanceMode]);
 
   const currency = t.common.currencyUnit;
 
@@ -198,14 +220,30 @@ export default function TimeSelectScreen() {
       >
         <Text style={styles.title}>{t.timeSelect.title}</Text>
 
+        {/* Balance / hourly-billing pseudo-card. Always rendered
+            first regardless of whether the tenant has packages —
+            the user has a balance topup option even at clubs that
+            haven't published any packages yet. */}
+        <PackageCard
+          Icon={WalletIcon}
+          iconColor="#22C55E"
+          iconBgColor="rgba(34, 197, 94, 0.15)"
+          title={t.timeSelect.balanceOptionTitle}
+          subtitle={t.timeSelect.balanceOptionSub}
+          price={t.timeSelect.balanceOptionPrice}
+          selected={isBalanceMode}
+          onPress={() => setSelectedPackageId(BALANCE_PSEUDO_ID)}
+        />
+
         {packagesLoading ? (
           <View style={styles.loaderBlock}>
             <ActivityIndicator color={Colors.primary} />
           </View>
         ) : packages.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyEmoji}>📦</Text>
-            <Text style={styles.emptyTitle}>{t.timeSelect.noPackagesTitle}</Text>
+          // Empty-packages state is informational only now — the
+          // balance card above still gives the user a way forward.
+          // Keep the copy as a hint about future tenant packages.
+          <View style={[styles.emptyCard, styles.emptyCardSmall]}>
             <Text style={styles.emptySub}>{t.timeSelect.noPackagesSub}</Text>
           </View>
         ) : (
@@ -294,27 +332,45 @@ export default function TimeSelectScreen() {
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() => {
-            if (!selectedPackage || !selectedTime) return;
-            const durationHours = Math.max(1, Math.round(selectedPackage.duration_min / 60));
-            router.push({
-              pathname: '/payment',
-              params: {
-                packageId: String(selectedPackage.id),
-                packageTitle: selectedPackage.name,
-                priceAmount: String(selectedPackage.price),
-                durationHours: String(durationHours),
-                startTime: selectedTime,
-                startDate: slotsDate ?? '',
-              },
-            });
+            if (!selectedTime) return;
+            if (!isBalanceMode && !selectedPackage) return;
+            // Balance mode forwards empty package fields — /payment
+            // recognises the missing packageId / priceAmount /
+            // durationHours and falls back to zone-price × default
+            // duration for the subtotal, billing hourly from the
+            // user's club balance instead of pinning the booking to
+            // a package row.
+            const params = isBalanceMode
+              ? {
+                  packageId: '',
+                  packageTitle: '',
+                  priceAmount: '',
+                  durationHours: '1',
+                  startTime: selectedTime,
+                  startDate: slotsDate ?? '',
+                }
+              : {
+                  packageId: String(selectedPackage!.id),
+                  packageTitle: selectedPackage!.name,
+                  priceAmount: String(selectedPackage!.price),
+                  durationHours: String(
+                    Math.max(1, Math.round(selectedPackage!.duration_min / 60)),
+                  ),
+                  startTime: selectedTime,
+                  startDate: slotsDate ?? '',
+                };
+            router.push({ pathname: '/payment', params });
           }}
-          disabled={!selectedPackage || !selectedTime}
+          disabled={!selectedTime || (!isBalanceMode && !selectedPackage)}
           accessibilityRole="button"
           accessibilityLabel={t.timeSelect.continue}
-          accessibilityState={{ disabled: !selectedPackage || !selectedTime }}
+          accessibilityState={{
+            disabled: !selectedTime || (!isBalanceMode && !selectedPackage),
+          }}
           style={[
             continueBtnStyles.btn,
-            (!selectedPackage || !selectedTime) && continueBtnStyles.btnDisabled,
+            (!selectedTime || (!isBalanceMode && !selectedPackage)) &&
+              continueBtnStyles.btnDisabled,
           ]}
         >
           <LinearGradient

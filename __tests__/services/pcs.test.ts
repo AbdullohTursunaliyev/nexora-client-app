@@ -111,6 +111,33 @@ describe('pcs service', () => {
     expect(mockedPost).toHaveBeenCalledWith('/mobile/pcs/7/book', {});
   });
 
+  test('bookPc without an idempotency key sends NO third config arg', async () => {
+    // The double-charge fix adds an optional idempotency key. When the
+    // caller omits it we must keep the exact two-arg call shape so the
+    // request interceptor's per-request fallback still applies and the
+    // BE contract is unchanged. (`toHaveBeenCalledWith` fails on an
+    // extra explicit `undefined`, so this also guards against a
+    // regression that always forwards a third arg.)
+    mockedPost.mockResolvedValueOnce({ data: { ok: true } });
+    await pcs.bookPc(7, { hold_minutes: 60 });
+    expect(mockedPost).toHaveBeenCalledTimes(1);
+    expect(mockedPost.mock.calls[0]).toHaveLength(2);
+  });
+
+  test('bookPc forwards a caller idempotency key as the Idempotency-Key header', async () => {
+    // payment.tsx mints one stable key per booking intent and reuses it
+    // across retries / double-taps. The service must surface it as the
+    // Idempotency-Key header (3rd axios config arg) so the BE can de-dup
+    // a retried POST instead of double-debiting the deposit.
+    mockedPost.mockResolvedValueOnce({ data: { ok: true } });
+    await pcs.bookPc(7, { hold_minutes: 60 }, 'fixed-key-123');
+    expect(mockedPost).toHaveBeenCalledWith(
+      '/mobile/pcs/7/book',
+      { hold_minutes: 60 },
+      { headers: { 'Idempotency-Key': 'fixed-key-123' } },
+    );
+  });
+
   test('partyBook posts pc_ids', async () => {
     mockedPost.mockResolvedValueOnce({ data: { ok: true } });
     await pcs.partyBook({ pc_ids: [1, 2, 3] });
@@ -189,6 +216,49 @@ describe('pcs service', () => {
     expect(mockedPost).toHaveBeenCalledWith('/mobile/pcs/open', {
       code: 'PC-01',
     });
+    // No key passed → exactly two args (interceptor fallback applies).
+    expect(mockedPost.mock.calls[0]).toHaveLength(2);
+  });
+
+  test('openByQr forwards a caller idempotency key as the Idempotency-Key header', async () => {
+    // qr-scan.tsx reuses one key per distinct scanned code so a slow
+    // network + re-scan can't open the same PC twice / double-charge
+    // the opening session.
+    mockedPost.mockResolvedValueOnce({ data: { ok: true } });
+    await pcs.openByQr({ code: 'PC-01' }, 'qr-key-abc');
+    expect(mockedPost).toHaveBeenCalledWith(
+      '/mobile/pcs/open',
+      { code: 'PC-01' },
+      { headers: { 'Idempotency-Key': 'qr-key-abc' } },
+    );
+  });
+
+  test('claimPc posts claim_id to /mobile/qr-claim (Shell login QR bind)', async () => {
+    // The mobile-QR-login flow: Shell shows `nexora://claim?cid=<uuid>`,
+    // the signed-in client scans it and binds itself to that seat's
+    // pending Shell session. BE contract is body `{ claim_id }`. No key
+    // passed → exactly two args so the interceptor's per-request
+    // fallback applies (call shape stays byte-identical to a keyless
+    // post).
+    mockedPost.mockResolvedValueOnce({ data: { ok: true } });
+    await pcs.claimPc('abc-123-uuid');
+    expect(mockedPost).toHaveBeenCalledWith('/mobile/qr-claim', {
+      claim_id: 'abc-123-uuid',
+    });
+    expect(mockedPost.mock.calls[0]).toHaveLength(2);
+  });
+
+  test('claimPc forwards a caller idempotency key as the Idempotency-Key header', async () => {
+    // qr-scan.tsx reuses one key per distinct claim id so a re-tap /
+    // flaky-network retry of the same login QR binds the client once,
+    // not twice.
+    mockedPost.mockResolvedValueOnce({ data: { ok: true } });
+    await pcs.claimPc('abc-123-uuid', 'claim-key-xyz');
+    expect(mockedPost).toHaveBeenCalledWith(
+      '/mobile/qr-claim',
+      { claim_id: 'abc-123-uuid' },
+      { headers: { 'Idempotency-Key': 'claim-key-xyz' } },
+    );
   });
 
   test('listSmartQueue unwraps items', async () => {

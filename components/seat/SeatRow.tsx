@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { Fonts } from '../../constants/Fonts';
 import Seat, { SeatStatus } from './Seat';
@@ -8,44 +9,66 @@ interface Props {
   onSeatPress: (id: string) => void;
 }
 
-const SCREEN_PADDING = 32; // 16 px gutter on each side of seat-select scroll
+const SCREEN_PADDING = 32; // 16-pt gutter on each side of the parent scroll
 const AISLE = 16;
-const INNER_GAP = 6;
-const SEATS_PER_HALF = 5;
-const HALVES = 2;
-
-const TOTAL_SEATS = SEATS_PER_HALF * HALVES;
-const INNER_GAPS = (SEATS_PER_HALF - 1) * HALVES * INNER_GAP;
-const NON_SEAT_WIDTH = SCREEN_PADDING + AISLE + INNER_GAPS;
-
-const MIN_SEAT = 30;
-const MAX_SEAT = 54;
+const INNER_GAP = 8;
 
 /**
- * Single row of 10 seats split by the aisle (5 + 5).
+ * Seat tile sizing — adapts to how many seats are in the row.
  *
- * Pre-fix (RESP-C3) every tile was a hardcoded 54 dp wide — at that
- * size the row wanted 604 dp of horizontal space, which overflowed the
- * 288-dp content area on a 320-dp device (iPhone SE 1/2/3, classic
- * Android phones, foldables in cover mode). The result was clipped
- * aisle + half-rendered seats.
+ *   1 seat        → 132 dp  (no aisle; centred, premium feel)
+ *   2-3 seats     → 110 dp  (no aisle)
+ *   4-5 seats     → 84 dp   (no aisle)
+ *   6-7 seats     → 64 dp   (no aisle)
+ *   8+ seats      → scales down via formula below, with 5+5 aisle
+ *                   split for classic 10-PC clubs.
  *
- * We now scale the tile size to the available width:
- *   seat = clamp(MIN_SEAT, (window − non_seat) / 10, MAX_SEAT)
+ * Pre-fix the row was hardcoded 5+5 split with a tile cap of 54 dp.
+ * For a tenant with only 1 PC the user saw a single ~30-dp tile
+ * floating off-centre — looked like a UI bug, not a bookable seat.
+ * Adaptive sizing keeps the row balanced regardless of how many PCs
+ * the operator has registered.
  *
- * Touch target is preserved by Seat.tsx hitSlop, so even at 30 dp the
- * tap area stays > 44 dp (HIG minimum).
+ * Tap target is preserved by Seat.tsx's hitSlop, so even the lowest
+ * tile width stays > 44 dp (iOS HIG).
  */
+const MIN_SEAT = 30;
+const AISLE_THRESHOLD = 8;
+
+function pickSeatSize(seatCount: number, availableWidth: number): number {
+  if (seatCount <= 0) return MIN_SEAT;
+
+  // Per-bucket max so a 1-PC row looks generous and a 10-PC row
+  // doesn't dwarf the screen. Values picked off a Figma mock — the
+  // perceived "seat is comfortable to tap" sweet spot.
+  const bucketMax =
+    seatCount === 1 ? 132 :
+    seatCount <= 3 ? 110 :
+    seatCount <= 5 ? 84 :
+    seatCount <= 7 ? 64 :
+    54;
+
+  const totalGaps = (seatCount - 1) * INNER_GAP +
+    (seatCount >= AISLE_THRESHOLD ? AISLE : 0);
+  const fitWidth = Math.floor((availableWidth - totalGaps) / seatCount);
+
+  return Math.max(MIN_SEAT, Math.min(bucketMax, fitWidth));
+}
+
 export default function SeatRow({ rowLabel, seats, onSeatPress }: Props) {
   const { width } = useWindowDimensions();
-  const available = Math.max(0, width - NON_SEAT_WIDTH);
-  const seatSize = Math.max(
-    MIN_SEAT,
-    Math.min(MAX_SEAT, Math.floor(available / TOTAL_SEATS)),
+  const seatCount = seats.length;
+  const seatSize = useMemo(
+    () => pickSeatSize(seatCount, Math.max(0, width - SCREEN_PADDING)),
+    [seatCount, width],
   );
 
-  const firstHalf = seats.slice(0, 5);
-  const secondHalf = seats.slice(5, 10);
+  // Aisle split only kicks in for classic 10-PC rows (or any 8+).
+  // Smaller rows render the seats in a single centred line.
+  const useAisle = seatCount >= AISLE_THRESHOLD;
+  const half = useAisle ? Math.floor(seatCount / 2) : seatCount;
+  const firstHalf = useAisle ? seats.slice(0, half) : seats;
+  const secondHalf = useAisle ? seats.slice(half) : [];
 
   return (
     <View style={styles.section}>
@@ -66,18 +89,20 @@ export default function SeatRow({ rowLabel, seats, onSeatPress }: Props) {
             />
           ))}
         </View>
-        <View style={styles.aisle} />
-        <View style={styles.half}>
-          {secondHalf.map((s) => (
-            <Seat
-              key={s.id}
-              id={s.id}
-              status={s.status}
-              size={seatSize}
-              onPress={() => onSeatPress(s.id)}
-            />
-          ))}
-        </View>
+        {useAisle && <View style={styles.aisle} />}
+        {useAisle && (
+          <View style={styles.half}>
+            {secondHalf.map((s) => (
+              <Seat
+                key={s.id}
+                id={s.id}
+                status={s.status}
+                size={seatSize}
+                onPress={() => onSeatPress(s.id)}
+              />
+            ))}
+          </View>
+        )}
       </View>
     </View>
   );

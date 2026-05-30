@@ -133,8 +133,11 @@ type Dict = {
     registerStepSubtitle: string;
     firstNamePlaceholder: string;
     lastNamePlaceholder: string;
+    referralCodePlaceholder: string;
+    birthDatePlaceholder: string;
     finishRegisterBtn: string;
     errorFirstName: string;
+    errorBirthDate: string;
     /** Toasts on success. */
     welcomeToast: string;
     registeredToast: string;
@@ -298,6 +301,12 @@ type Dict = {
     noSlotsSub: string;
     peakLabel: string;
     peakHint: string;
+    /** Title on the "pay from balance" pseudo-card. */
+    balanceOptionTitle: string;
+    /** Sub-copy under the balance card explaining hourly billing. */
+    balanceOptionSub: string;
+    /** Price-column label on the balance card (no fixed price). */
+    balanceOptionPrice: string;
   };
   payment: {
     headerStep: string;
@@ -335,6 +344,12 @@ type Dict = {
     errorInsufficientBalanceDetail: string;
     /** Warning shown when the picked time slot rolled forward to tomorrow. */
     rolledToTomorrowWarning: string;
+    /** Title of the reservation-deposit explainer banner. Visible
+     *  only in balance/hourly mode (packages are flat-rate). */
+    depositTitle: string;
+    /** Body of the deposit explainer. `{amount}` is interpolated
+     *  with the formatted hold amount + currency unit. */
+    depositSub: string;
   };
   seatSelect: {
     headerStep: string;
@@ -449,6 +464,34 @@ type Dict = {
     successToast: string;
     errorTitle: string;
     errorOpenUrl: string;
+    /** Spinner caption while the configured providers are loading. */
+    loadingLabel: string;
+    /** Empty-state (club configured no online top-up) — title. */
+    emptyTitle: string;
+    /** Empty-state subtitle: pay at the club's till instead. */
+    emptySubtitle: string;
+    /** Section heading above the amount chips + custom input. */
+    amountSectionTitle: string;
+    /** Placeholder inside the custom-amount input. */
+    customAmountPlaceholder: string;
+    /** Helper line under the amount input stating the minimum. */
+    minHint: string;
+    /** Section heading above the provider picker. */
+    methodSectionTitle: string;
+    /** Sub-label on the Payme provider row. */
+    methodPaymeSub: string;
+    /** Sub-label on the Click provider row. */
+    methodClickSub: string;
+    /** Validation toast: amount below the 1000-sum minimum. */
+    minAmountError: string;
+    /** Confirm CTA label (no amount interpolation — kept short). */
+    confirmBtn: string;
+    /** A11y label for a provider row: "Pay with {name}". */
+    methodA11y: string;
+    /** Toast after a paid top-up: balance credited. */
+    paidToast: string;
+    /** Toast when the order is still pending after polling. */
+    pendingToast: string;
   };
   zoneSwitch: {
     headerTitle: string;
@@ -539,6 +582,10 @@ type Dict = {
     lastName: string;
     login: string;
     phone: string;
+    birthDate: string;
+    birthDatePlaceholder: string;
+    birthDateHint: string;
+    birthDateInvalid: string;
     /** Placeholder shown in the empty phone field. Country-code
      *  example so the user knows what format to type. */
     phonePlaceholder: string;
@@ -874,12 +921,6 @@ type Dict = {
     bonusLabel: string;
     /** Payment methods section title. */
     paymentMethodsTitle: string;
-    /** A11y label for a single payment-method card. */
-    paymentMethodA11y: string;
-    /** Sub-label under Payme. */
-    paymeSub: string;
-    /** Sub-label under Click. */
-    clickSub: string;
   };
   components: {
     breadcrumbZone: string;
@@ -1031,6 +1072,9 @@ type Dict = {
     alreadyFriendsBadge: string;
     /** Search-result pill shown when the row is blocked. */
     blockedBadge: string;
+    /** "Playing PC-XX at {club}" status line on a friend card.
+     *  `{pc}` = PC code, `{club}` = tenant name. */
+    playingNow: string;
   };
   friendRequests: {
     headerTitle: string;
@@ -1412,6 +1456,22 @@ type Dict = {
     changeClubA11y: string;
     /** Title of the club-picker bottom sheet. */
     changeClubTitle: string;
+    // ─── SEC: cross-tenant sticker guard ───
+    /** Title of the dialog shown when a scanned sticker belongs to another club. */
+    wrongClubTitle: string;
+    /** Confirm-dialog body when the user IS a member of the scanned club. `{club}` interpolated. */
+    wrongClubSwitch: string;
+    /** Confirm button that switches into the scanned club and continues the open. */
+    wrongClubSwitchCta: string;
+    /** Alert body when the scanned sticker belongs to a club the user has NOT joined. */
+    wrongClubNotMember: string;
+    // ─── Mobile QR claim (Shell login QR) ───
+    /** Success dialog body after the user claims a Shell-displayed PC. */
+    qrClaimSuccess: string;
+    /** Dialog body when the Shell claim code has expired before the scan. */
+    qrClaimExpired: string;
+    /** Dialog body for a generic claim failure (not found / network). */
+    qrClaimError: string;
   };
   activeSession: {
     headerTitle: string;
@@ -1425,6 +1485,12 @@ type Dict = {
     addBalance: string;
     switchZone: string;
     endSession: string;
+    /** Same row label, but used when the booking hasn't yet
+     *  produced an active Session — the user is cancelling the
+     *  pre-session reservation instead of ending a running game.
+     *  Keeps the same row + same BE call (unbookPc), just clearer
+     *  copy. */
+    cancelBooking: string;
     tabSession: string;
     tabServices: string;
     tabChat: string;
@@ -1438,6 +1504,56 @@ type Dict = {
     pendingTitle: string;
     /** Sub-text under pendingTitle — clarifies the booked-but-not-busy state. */
     pendingSub: string;
+    /**
+     * Labels for the end-session / cancel-booking confirmation dialog.
+     * Pre-fix this reused `t.bookingExit.*` (which has "Continue" /
+     * "Exit" semantics meant for the booking-flow stack pop) — the
+     * user reported that "Отменить бронь" with "Продолжить / Выйти"
+     * buttons read as nonsense. Now the buttons match the action verb.
+     */
+    confirmEndTitle: string;
+    confirmEndMessage: string;
+    confirmCancelTitle: string;
+    confirmCancelMessage: string;
+    /** Destructive confirm — "Yes, end session". */
+    confirmYesEnd: string;
+    /** Destructive confirm — "Yes, cancel booking". */
+    confirmYesCancel: string;
+    /** Safe back-out — used for both dialogs. */
+    confirmBack: string;
+    /**
+     * Booking-details card labels — mirror the same fields that
+     * booking-success renders post-payment. Pre-fix /active-session
+     * showed only "PC + zone + elapsed"; the user reported that they
+     * expected the same summary card they saw on /booking-success
+     * to remain visible as the live booking confirmation. The card
+     * now lives on /active-session and renders the same details in
+     * both pre-session and active states.
+     */
+    detailBookingId: string;
+    detailClub: string;
+    detailZone: string;
+    detailTime: string;
+    detailPackage: string;
+    detailTotal: string;
+    /** QR caption shown under the QR code (pre-session state only). */
+    qrHint: string;
+    /** Title above the countdown ("До начала"). */
+    countdownLabel: string;
+    /** Empty-state title shown when the screen has loaded but no booking exists. */
+    noBookingTitle: string;
+    /** Empty-state sub copy + a CTA hint pointing to the bookings tab. */
+    noBookingSub: string;
+    /** CTA on the empty state — navigates to the booking flow. */
+    noBookingCta: string;
+    /** Hero title above the badge — pre-session state ("Booking confirmed"). */
+    heroTitleBooked: string;
+    /** Hero subtitle below the title — pre-session. */
+    heroSubBooked: string;
+    /** Hero title above the badge — live state ("Session in progress"). */
+    heroTitleLive: string;
+    /** Hero subtitle below the title — live. */
+    heroSubLive: string;
   };
   /**
    * Transaction history screen — reachable from Settings → History.
@@ -1688,8 +1804,11 @@ export const translations: Record<Locale, Dict> = {
       registerStepSubtitle: 'Ismingizni kiriting — klublar sizni\nshu nom bilan koʻradi',
       firstNamePlaceholder: 'Ism',
       lastNamePlaceholder: 'Familiya (ixtiyoriy)',
+      referralCodePlaceholder: 'Referral kodi (ixtiyoriy)',
+      birthDatePlaceholder: 'Tugʻilgan sana: YYYY-MM-DD',
       finishRegisterBtn: 'Davom etish',
       errorFirstName: 'Ism kamida 2 ta belgidan iborat boʻlsin',
+      errorBirthDate: 'Tugʻilgan sanani YYYY-MM-DD formatida kiriting',
       welcomeToast: 'Xush kelibsiz!',
       registeredToast: 'Akkaunt yaratildi',
       checkingLabel: 'Tekshirilmoqda…',
@@ -1817,10 +1936,13 @@ export const translations: Record<Locale, Dict> = {
       continue: 'Davom etish',
       hoursSuffix: 'soat',
       noPackagesTitle: 'Paketlar mavjud emas',
-      noPackagesSub: 'Ushbu klubda hali paketlar sozlanmagan. Soatlik bron qiling.',
+      noPackagesSub: 'Ushbu klubda hali paketlar sozlanmagan. Soatlik balansdan to‘lashingiz mumkin.',
       noSlotsSub: "Bu kunda bo'sh vaqt yo'q. Ertaga qaytib ko'ring.",
       peakLabel: 'Yuqori talab',
       peakHint: "Bu vaqt yuqori talab vaqti. Paket narxi o'zgarmaydi, lekin klub band bo'lishi mumkin.",
+      balanceOptionTitle: 'Balansdan to‘lash',
+      balanceOptionSub: 'Soatlik to‘lov klub balansingizdan',
+      balanceOptionPrice: 'Soatlik',
     },
     payment: {
       headerStep: '05',
@@ -1853,6 +1975,8 @@ export const translations: Record<Locale, Dict> = {
       errorInsufficientBalance: "Balansda yetarli mablag' yo'q",
       errorInsufficientBalanceDetail: "Yana {amount} {unit} kerak. Klubda to'ldiring.",
       rolledToTomorrowWarning: "Tanlangan vaqt o'tib ketgan — ertangi kunga {time} bron qilinadi.",
+      depositTitle: 'Bron uchun depozit',
+      depositSub: 'Balansingizdan {amount} bron sifatida ushlab turiladi. Kompyuterga kirib o‘ynashni boshlasangiz — bu summa balansingizga qaytadi va haqiqiy o‘yin vaqti soatlik hisoblanadi. Bormasangiz — depozit klubda qoladi.',
     },
     seatSelect: {
       headerStep: '03',
@@ -1944,6 +2068,22 @@ export const translations: Record<Locale, Dict> = {
       successToast: "Hisob muvaffaqiyatli to'ldirildi!",
       errorTitle: 'Xatolik',
       errorOpenUrl: "To'lov tizimini ochib bo'lmadi. Brauzer ishlayotganini tekshiring.",
+      loadingLabel: "To'lov usullari yuklanmoqda…",
+      emptyTitle: "Onlayn to'ldirish hozircha ulanmagan",
+      emptySubtitle:
+        "Bu klub onlayn to'lov usullarini hali yoqmagan. Hisobingizni klub kassasida to'ldiring.",
+      amountSectionTitle: 'Summani tanlang',
+      customAmountPlaceholder: 'Boshqa summa',
+      minHint: "Eng kam summa — 1 000 so'm",
+      methodSectionTitle: "To'lov usuli",
+      methodPaymeSub: 'Karta yoki bank orqali',
+      methodClickSub: "Tez to'lov tizimi",
+      minAmountError: "Eng kam summa — 1 000 so'm",
+      confirmBtn: "To'lash",
+      methodA11y: "{name} bilan to'lash",
+      paidToast: "Balans to'ldirildi",
+      pendingToast:
+        "To'lov hali tasdiqlanmadi. Balans tasdiqlangach yangilanadi.",
     },
     clubJoin: {
       headerTitle: "Klubga qoʻshilish",
@@ -1980,6 +2120,10 @@ export const translations: Record<Locale, Dict> = {
       lastName: 'Familiya',
       login: 'Login',
       phone: 'Telefon raqami',
+      birthDate: 'Tugʻilgan sana',
+      birthDatePlaceholder: 'YYYY-MM-DD',
+      birthDateHint: 'Tugʻilgan kun bonusini olish uchun ishlatiladi',
+      birthDateInvalid: 'Tugʻilgan sanani YYYY-MM-DD formatida kiriting',
       phonePlaceholder: '+998 90 123 45 67',
       phoneHint: "Klubdan sizga bog'lanish uchun ishlatiladi",
       phoneTooLong: 'Telefon raqami juda uzun',
@@ -2248,9 +2392,6 @@ export const translations: Record<Locale, Dict> = {
       liveLabel: 'LIVE',
       bonusLabel: 'Bonus',
       paymentMethodsTitle: "To'lov usullari",
-      paymentMethodA11y: "{name} bilan to'lash",
-      paymeSub: 'Karta yoki bank orqali',
-      clickSub: 'Tez to\'lov tizimi',
     },
     components: {
       breadcrumbZone: 'Zona',
@@ -2358,7 +2499,7 @@ export const translations: Record<Locale, Dict> = {
       sectionMine: "Mening do'stlarim ({n})",
       pendingTitle: "{n} ta yangi so'rov",
       pendingSub: "Ko'rish uchun bosing",
-      searchPlaceholder: "Login yoki ism bo'yicha qidirish...",
+      searchPlaceholder: "Telefon raqami yoki ism bo'yicha qidirish",
       searchEmptyTitle: 'Foydalanuvchini qidiring',
       searchEmptySub: 'Login yoki ismni kiritib Enter bosing',
       foundCount: 'Topildi: {n}',
@@ -2379,6 +2520,7 @@ export const translations: Record<Locale, Dict> = {
       removeConfirmNo: 'Bekor',
       alreadyFriendsBadge: "Do'st",
       blockedBadge: 'Bloklangan',
+      playingNow: '{pc} · {club}da o‘ynayapti',
     },
     friendRequests: {
       headerTitle: "So'rovlar",
@@ -2544,12 +2686,12 @@ export const translations: Record<Locale, Dict> = {
       linkLabel: 'Taklif havolangizni ulashing',
       howItWorks: 'Qanday ishlaydi?',
       step1: "Do'stingiz kodingiz bilan ro'yxatdan o'tadi",
-      step2: "U birinchi marta o'ynaydi",
-      step3: 'Ikkalangiz ham mukofot olasiz',
+      step2: "U birinchi marta balans to'ldiradi",
+      step3: "Qancha to'ldirsa, shuncha bonus ikkalangizga yoziladi",
       yourReferrals: 'Siz taklif qilganlar',
       statInvites: 'Takliflar',
       statActive: "Faol do'stlar",
-      statPoints: 'Topgan ball',
+      statPoints: 'Bonus',
       milestones: 'Milestone mukofotlar',
       milestone5: "5 ta do'st taklif qiling",
       milestone10: "10 ta do'st taklif qiling",
@@ -2665,6 +2807,15 @@ export const translations: Record<Locale, Dict> = {
       myCodeHint: 'QR kodingiz kassir va kompyuterda sizni avtomatik aniqlaydi.',
       changeClubA11y: 'Klubni o‘zgartirish',
       changeClubTitle: 'Klubni tanlang',
+      wrongClubTitle: 'Bu kompyuter boshqa klubga tegishli',
+      wrongClubSwitch:
+        'Bu QR «{club}» klubiga tegishli, siz esa hozir boshqa klubdasiz. «{club}» klubiga o‘tib, sessiyani shu yerda boshlaymizmi?',
+      wrongClubSwitchCta: 'O‘tish va davom etish',
+      wrongClubNotMember:
+        'Bu kompyuter siz a’zo bo‘lmagan klubga tegishli. Avval o‘sha klubga qo‘shiling yoki o‘z klubingizdagi kompyuterni skanerlang.',
+      qrClaimSuccess: 'Kompyuterga ulandingiz! Ekraningizga qarang.',
+      qrClaimExpired: 'QR kodning muddati tugagan. Kompyuterda yangi QR kodni oching va qayta skanerlang.',
+      qrClaimError: 'Kompyuterga ulanib bo‘lmadi. Qayta urinib ko‘ring.',
     },
     activeSession: {
       headerTitle: 'Faol sessiya',
@@ -2678,6 +2829,7 @@ export const translations: Record<Locale, Dict> = {
       addBalance: "Balans qo'shish",
       switchZone: 'Zonani almashtirish',
       endSession: 'Sessiyani yakunlash',
+      cancelBooking: 'Bronni bekor qilish',
       tabSession: 'Sessiya',
       tabServices: 'Xizmatlar',
       tabChat: 'Chat',
@@ -2689,6 +2841,31 @@ export const translations: Record<Locale, Dict> = {
       pendingTitle: "Bron tasdiqlandi",
       pendingSub:
         "Sessiya hali boshlanmagan. Kompyuteringizga o'ting va operator sessiyani ochishini kuting.",
+      confirmEndTitle: 'Sessiyani yakunlaysizmi?',
+      confirmEndMessage:
+        "Tasdiqlasangiz, sessiya darhol to'xtaydi va kompyuter bo'shatiladi.",
+      confirmCancelTitle: 'Bronni bekor qilamizmi?',
+      confirmCancelMessage:
+        "Bekor qilsangiz, joyingiz bo'shatiladi va ushlangan depozit balansingizga qaytariladi.",
+      confirmYesEnd: 'Ha, yakunlash',
+      confirmYesCancel: 'Ha, bekor qilish',
+      confirmBack: 'Orqaga',
+      detailBookingId: 'Bron ID',
+      detailClub: 'Klub',
+      detailZone: 'Zona / Joy',
+      detailTime: 'Sana va vaqt',
+      detailPackage: 'Paket',
+      detailTotal: 'Jami',
+      qrHint: "QR kodni klubda ko'rsating",
+      countdownLabel: 'Boshlanishigacha',
+      noBookingTitle: "Faol bron yo'q",
+      noBookingSub:
+        "Hozircha bironta bron qilmagansiz. Klubni tanlab, joy band qilishni boshlashingiz mumkin.",
+      noBookingCta: 'Klubni tanlash',
+      heroTitleBooked: 'Bron tasdiqlandi',
+      heroSubBooked: 'Joy band qilindi — klubga kelishda QR-kodni ko‘rsating.',
+      heroTitleLive: 'Sessiya davom etmoqda',
+      heroSubLive: 'Yaxshi o‘yin! Balans real vaqt rejimida hisoblanadi.',
     },
     transactionHistory: {
       headerTitle: 'Tranzaksiyalar tarixi',
@@ -2945,8 +3122,11 @@ export const translations: Record<Locale, Dict> = {
       registerStepSubtitle: 'Введите ваше имя — клубы увидят\nвас под этим именем',
       firstNamePlaceholder: 'Имя',
       lastNamePlaceholder: 'Фамилия (необязательно)',
+      referralCodePlaceholder: 'Реферальный код (необязательно)',
+      birthDatePlaceholder: 'Дата рождения: YYYY-MM-DD',
       finishRegisterBtn: 'Продолжить',
       errorFirstName: 'Имя должно содержать минимум 2 символа',
+      errorBirthDate: 'Введите дату рождения в формате YYYY-MM-DD',
       welcomeToast: 'Добро пожаловать!',
       registeredToast: 'Аккаунт создан',
       checkingLabel: 'Проверка…',
@@ -3074,10 +3254,13 @@ export const translations: Record<Locale, Dict> = {
       continue: 'Продолжить',
       hoursSuffix: 'час',
       noPackagesTitle: 'Пакеты не настроены',
-      noPackagesSub: 'В этом клубе ещё нет пакетов. Забронируйте почасово.',
+      noPackagesSub: 'В этом клубе пока нет пакетов. Можно оплачивать почасово с баланса.',
       noSlotsSub: 'На этот день нет свободного времени. Загляните завтра.',
       peakLabel: 'Высокий спрос',
       peakHint: 'Это время высокого спроса. Цена пакета не меняется, но клуб может быть загружен.',
+      balanceOptionTitle: 'Оплата с баланса',
+      balanceOptionSub: 'Почасовая оплата с баланса клуба',
+      balanceOptionPrice: 'Почасово',
     },
     payment: {
       headerStep: '05',
@@ -3110,6 +3293,8 @@ export const translations: Record<Locale, Dict> = {
       errorInsufficientBalance: 'Недостаточно средств на балансе',
       errorInsufficientBalanceDetail: 'Нужно ещё {amount} {unit}. Пополните в клубе.',
       rolledToTomorrowWarning: 'Время уже прошло — бронь на завтра в {time}.',
+      depositTitle: 'Депозит за бронь',
+      depositSub: '{amount} удерживается с вашего баланса как депозит. Когда вы сядете за компьютер и начнёте игру — эта сумма вернётся на баланс, а реальное время будет списываться почасово. Если не придёте — депозит остаётся клубу.',
     },
     seatSelect: {
       headerStep: '03',
@@ -3198,6 +3383,22 @@ export const translations: Record<Locale, Dict> = {
       methodFee: 'Комиссия 0%',
       payBtn: 'Оплатить {amount} сум',
       secure: 'Безопасная оплата',
+      loadingLabel: 'Загрузка способов оплаты…',
+      emptyTitle: 'Онлайн-пополнение пока недоступно',
+      emptySubtitle:
+        'Этот клуб ещё не подключил онлайн-оплату. Пополните счёт в кассе клуба.',
+      amountSectionTitle: 'Выберите сумму',
+      customAmountPlaceholder: 'Другая сумма',
+      minHint: 'Минимальная сумма — 1 000 сум',
+      methodSectionTitle: 'Способ оплаты',
+      methodPaymeSub: 'Карта или банк',
+      methodClickSub: 'Быстрые платежи',
+      minAmountError: 'Минимальная сумма — 1 000 сум',
+      confirmBtn: 'Оплатить',
+      methodA11y: 'Оплатить через {name}',
+      paidToast: 'Баланс пополнен',
+      pendingToast:
+        'Оплата ещё не подтверждена. Баланс обновится после подтверждения.',
       successToast: 'Счёт успешно пополнен!',
       errorTitle: 'Ошибка',
       errorOpenUrl: 'Не удалось открыть платёжную систему. Проверьте, что браузер работает.',
@@ -3237,6 +3438,10 @@ export const translations: Record<Locale, Dict> = {
       lastName: 'Фамилия',
       login: 'Логин',
       phone: 'Номер телефона',
+      birthDate: 'Дата рождения',
+      birthDatePlaceholder: 'YYYY-MM-DD',
+      birthDateHint: 'Используется для бонуса ко дню рождения',
+      birthDateInvalid: 'Введите дату рождения в формате YYYY-MM-DD',
       phonePlaceholder: '+998 90 123 45 67',
       phoneHint: 'Клуб сможет связаться с вами по этому номеру',
       phoneTooLong: 'Номер телефона слишком длинный',
@@ -3505,9 +3710,6 @@ export const translations: Record<Locale, Dict> = {
       liveLabel: 'LIVE',
       bonusLabel: 'Бонус',
       paymentMethodsTitle: 'Способы оплаты',
-      paymentMethodA11y: 'Оплатить через {name}',
-      paymeSub: 'Карта или банк',
-      clickSub: 'Быстрые платежи',
     },
     components: {
       breadcrumbZone: 'Зона',
@@ -3615,7 +3817,7 @@ export const translations: Record<Locale, Dict> = {
       sectionMine: 'Мои друзья ({n})',
       pendingTitle: '{n} новых заявок',
       pendingSub: 'Нажмите, чтобы посмотреть',
-      searchPlaceholder: 'Поиск по логину или имени...',
+      searchPlaceholder: 'Поиск по телефону или имени',
       searchEmptyTitle: 'Найдите пользователя',
       searchEmptySub: 'Введите логин или имя и нажмите Enter',
       foundCount: 'Найдено: {n}',
@@ -3636,6 +3838,7 @@ export const translations: Record<Locale, Dict> = {
       removeConfirmNo: 'Отмена',
       alreadyFriendsBadge: 'Друг',
       blockedBadge: 'Заблокирован',
+      playingNow: 'Играет на {pc} в {club}',
     },
     friendRequests: {
       headerTitle: 'Заявки',
@@ -3801,12 +4004,12 @@ export const translations: Record<Locale, Dict> = {
       linkLabel: 'Поделитесь реферальной ссылкой',
       howItWorks: 'Как это работает?',
       step1: 'Друг регистрируется по вашему коду',
-      step2: 'Он играет в первый раз',
-      step3: 'Вы оба получаете награду',
+      step2: 'Друг впервые пополняет баланс',
+      step3: 'Сколько он пополнит, столько бонуса получите вы оба',
       yourReferrals: 'Ваши приглашённые',
       statInvites: 'Приглашений',
       statActive: 'Активные друзья',
-      statPoints: 'Заработано баллов',
+      statPoints: 'Бонус',
       milestones: 'Награды за этапы',
       milestone5: 'Пригласите 5 друзей',
       milestone10: 'Пригласите 10 друзей',
@@ -3922,6 +4125,15 @@ export const translations: Record<Locale, Dict> = {
       myCodeHint: 'QR-код помогает кассиру и компьютеру автоматически вас узнать.',
       changeClubA11y: 'Сменить клуб',
       changeClubTitle: 'Выберите клуб',
+      wrongClubTitle: 'Этот компьютер из другого клуба',
+      wrongClubSwitch:
+        'Этот QR относится к клубу «{club}», а вы сейчас в другом клубе. Переключиться на «{club}» и начать сессию там?',
+      wrongClubSwitchCta: 'Переключиться и продолжить',
+      wrongClubNotMember:
+        'Этот компьютер из клуба, в котором вы не состоите. Сначала вступите в этот клуб или отсканируйте компьютер своего клуба.',
+      qrClaimSuccess: 'Вы подключились к компьютеру! Посмотрите на экран.',
+      qrClaimExpired: 'Срок действия QR-кода истёк. Откройте новый QR-код на компьютере и отсканируйте снова.',
+      qrClaimError: 'Не удалось подключиться к компьютеру. Попробуйте ещё раз.',
     },
     activeSession: {
       headerTitle: 'Активная сессия',
@@ -3935,6 +4147,7 @@ export const translations: Record<Locale, Dict> = {
       addBalance: 'Пополнить баланс',
       switchZone: 'Сменить зону',
       endSession: 'Завершить сессию',
+      cancelBooking: 'Отменить бронь',
       tabSession: 'Сессия',
       tabServices: 'Сервисы',
       tabChat: 'Чат',
@@ -3946,6 +4159,31 @@ export const translations: Record<Locale, Dict> = {
       pendingTitle: 'Бронь подтверждена',
       pendingSub:
         'Сессия ещё не запущена. Подойдите к компьютеру и дождитесь, пока оператор откроет её.',
+      confirmEndTitle: 'Завершить сессию?',
+      confirmEndMessage:
+        'После подтверждения сессия немедленно остановится и компьютер освободится.',
+      confirmCancelTitle: 'Отменить бронь?',
+      confirmCancelMessage:
+        'После отмены ваше место освободится, а удержанный депозит вернётся на баланс.',
+      confirmYesEnd: 'Да, завершить',
+      confirmYesCancel: 'Да, отменить',
+      confirmBack: 'Назад',
+      detailBookingId: 'ID брони',
+      detailClub: 'Клуб',
+      detailZone: 'Зона / Место',
+      detailTime: 'Дата и время',
+      detailPackage: 'Пакет',
+      detailTotal: 'Итого',
+      qrHint: 'Покажите QR-код в клубе',
+      countdownLabel: 'До начала',
+      noBookingTitle: 'Активных броней нет',
+      noBookingSub:
+        'Сейчас у вас нет активной брони. Выберите клуб и забронируйте место.',
+      noBookingCta: 'Выбрать клуб',
+      heroTitleBooked: 'Бронь подтверждена',
+      heroSubBooked: 'Место зарезервировано — покажите QR при входе в клуб.',
+      heroTitleLive: 'Сессия в процессе',
+      heroSubLive: 'Хорошей игры! Баланс списывается в реальном времени.',
     },
     transactionHistory: {
       headerTitle: 'История транзакций',
@@ -4202,8 +4440,11 @@ export const translations: Record<Locale, Dict> = {
       registerStepSubtitle: 'Enter your name — clubs will see\nyou under this name',
       firstNamePlaceholder: 'First name',
       lastNamePlaceholder: 'Last name (optional)',
+      referralCodePlaceholder: 'Referral code (optional)',
+      birthDatePlaceholder: 'Birth date: YYYY-MM-DD',
       finishRegisterBtn: 'Continue',
       errorFirstName: 'First name must be at least 2 characters',
+      errorBirthDate: 'Enter birth date as YYYY-MM-DD',
       welcomeToast: 'Welcome!',
       registeredToast: 'Account created',
       checkingLabel: 'Checking…',
@@ -4331,10 +4572,13 @@ export const translations: Record<Locale, Dict> = {
       continue: 'Continue',
       hoursSuffix: 'h',
       noPackagesTitle: 'No packages yet',
-      noPackagesSub: 'This club has no packages set up yet. Book hourly instead.',
+      noPackagesSub: 'This club has no packages yet. You can pay hourly from your balance.',
       noSlotsSub: 'No free slots on this day. Check back tomorrow.',
       peakLabel: 'Peak hour',
       peakHint: 'This is a peak-demand slot. Package price stays the same, but the club may be busy.',
+      balanceOptionTitle: 'Pay from balance',
+      balanceOptionSub: 'Hourly billing from your club balance',
+      balanceOptionPrice: 'Hourly',
     },
     payment: {
       headerStep: '05',
@@ -4367,6 +4611,8 @@ export const translations: Record<Locale, Dict> = {
       errorInsufficientBalance: 'Not enough balance',
       errorInsufficientBalanceDetail: 'You need {amount} {unit} more. Top up at the club.',
       rolledToTomorrowWarning: "Time has passed — booking moved to tomorrow {time}.",
+      depositTitle: 'Reservation deposit',
+      depositSub: '{amount} is held from your balance as a deposit. When you sit at the PC and start playing, this amount is returned to your balance and real-time billing kicks in. If you no-show, the deposit stays with the club.',
     },
     seatSelect: {
       headerStep: '03',
@@ -4455,6 +4701,22 @@ export const translations: Record<Locale, Dict> = {
       methodFee: 'No fees',
       payBtn: 'Pay {amount} soum',
       secure: 'Secure payment',
+      loadingLabel: 'Loading payment methods…',
+      emptyTitle: 'Online top-up is not available yet',
+      emptySubtitle:
+        "This club hasn't enabled online payments yet. Top up your balance at the club's till.",
+      amountSectionTitle: 'Choose an amount',
+      customAmountPlaceholder: 'Custom amount',
+      minHint: 'Minimum amount — 1,000 soum',
+      methodSectionTitle: 'Payment method',
+      methodPaymeSub: 'Card or bank transfer',
+      methodClickSub: 'Instant payment',
+      minAmountError: 'Minimum amount — 1,000 soum',
+      confirmBtn: 'Pay',
+      methodA11y: 'Pay with {name}',
+      paidToast: 'Balance topped up',
+      pendingToast:
+        'Payment not confirmed yet. Your balance will update once confirmed.',
       successToast: 'Top-up successful!',
       errorTitle: 'Error',
       errorOpenUrl: 'Could not open the payment provider. Check your browser.',
@@ -4494,6 +4756,10 @@ export const translations: Record<Locale, Dict> = {
       lastName: 'Last name',
       login: 'Login',
       phone: 'Phone number',
+      birthDate: 'Birth date',
+      birthDatePlaceholder: 'YYYY-MM-DD',
+      birthDateHint: 'Used for birthday bonus',
+      birthDateInvalid: 'Enter birth date as YYYY-MM-DD',
       phonePlaceholder: '+998 90 123 45 67',
       phoneHint: 'The club can contact you on this number',
       phoneTooLong: 'Phone number is too long',
@@ -4762,9 +5028,6 @@ export const translations: Record<Locale, Dict> = {
       liveLabel: 'LIVE',
       bonusLabel: 'Bonus',
       paymentMethodsTitle: 'Payment methods',
-      paymentMethodA11y: 'Pay with {name}',
-      paymeSub: 'Card or bank transfer',
-      clickSub: 'Instant payment',
     },
     components: {
       breadcrumbZone: 'Zone',
@@ -4872,7 +5135,7 @@ export const translations: Record<Locale, Dict> = {
       sectionMine: 'My friends ({n})',
       pendingTitle: '{n} new requests',
       pendingSub: 'Tap to view',
-      searchPlaceholder: 'Search by login or name...',
+      searchPlaceholder: 'Search by phone or name',
       searchEmptyTitle: 'Find a user',
       searchEmptySub: 'Type a login or name and press Enter',
       foundCount: 'Found: {n}',
@@ -4893,6 +5156,7 @@ export const translations: Record<Locale, Dict> = {
       removeConfirmNo: 'Cancel',
       alreadyFriendsBadge: 'Friend',
       blockedBadge: 'Blocked',
+      playingNow: 'Playing {pc} at {club}',
     },
     friendRequests: {
       headerTitle: 'Requests',
@@ -5058,12 +5322,12 @@ export const translations: Record<Locale, Dict> = {
       linkLabel: 'Share your referral link',
       howItWorks: 'How it works?',
       step1: 'Your friend signs up with your code',
-      step2: 'They play for the first time',
-      step3: 'Both of you get rewarded',
+      step2: 'They top up for the first time',
+      step3: 'Both of you get the same amount as bonus',
       yourReferrals: 'Your referrals',
       statInvites: 'Invites',
       statActive: 'Active friends',
-      statPoints: 'Points earned',
+      statPoints: 'Bonus',
       milestones: 'Milestone rewards',
       milestone5: 'Invite 5 friends',
       milestone10: 'Invite 10 friends',
@@ -5179,6 +5443,15 @@ export const translations: Record<Locale, Dict> = {
       myCodeHint: 'Your QR lets the cashier and the PC identify you automatically.',
       changeClubA11y: 'Change club',
       changeClubTitle: 'Pick a club',
+      wrongClubTitle: 'This PC belongs to another club',
+      wrongClubSwitch:
+        'This QR belongs to "{club}", but you are currently in a different club. Switch to "{club}" and start the session there?',
+      wrongClubSwitchCta: 'Switch and continue',
+      wrongClubNotMember:
+        "This PC belongs to a club you haven't joined. Join that club first, or scan a PC in your own club.",
+      qrClaimSuccess: "You're connected to the PC! Look at your screen.",
+      qrClaimExpired: 'This QR code has expired. Open a fresh QR code on the PC and scan again.',
+      qrClaimError: "Couldn't connect to the PC. Please try again.",
     },
     activeSession: {
       headerTitle: 'Active session',
@@ -5192,6 +5465,7 @@ export const translations: Record<Locale, Dict> = {
       addBalance: 'Add balance',
       switchZone: 'Switch zone',
       endSession: 'End session',
+      cancelBooking: 'Cancel booking',
       tabSession: 'Session',
       tabServices: 'Services',
       tabChat: 'Chat',
@@ -5203,6 +5477,31 @@ export const translations: Record<Locale, Dict> = {
       pendingTitle: 'Booking confirmed',
       pendingSub:
         "Your session hasn't started yet. Head to your PC and wait for the operator to open it.",
+      confirmEndTitle: 'End session?',
+      confirmEndMessage:
+        'Once confirmed, the session will stop immediately and the PC will be released.',
+      confirmCancelTitle: 'Cancel booking?',
+      confirmCancelMessage:
+        'Your seat will be released and the held deposit will be returned to your balance.',
+      confirmYesEnd: 'Yes, end',
+      confirmYesCancel: 'Yes, cancel',
+      confirmBack: 'Back',
+      detailBookingId: 'Booking ID',
+      detailClub: 'Club',
+      detailZone: 'Zone / Seat',
+      detailTime: 'Date & time',
+      detailPackage: 'Package',
+      detailTotal: 'Total',
+      qrHint: 'Show this QR at the club',
+      countdownLabel: 'Until start',
+      noBookingTitle: 'No active booking',
+      noBookingSub:
+        "You haven't booked a seat yet. Pick a club and reserve a spot to get started.",
+      noBookingCta: 'Pick a club',
+      heroTitleBooked: 'Booking confirmed',
+      heroSubBooked: 'Your seat is reserved — show the QR at the club.',
+      heroTitleLive: 'Session in progress',
+      heroSubLive: 'Have a great session! Balance is billed in real time.',
     },
     transactionHistory: {
       headerTitle: 'Transaction history',

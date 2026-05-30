@@ -294,6 +294,7 @@ export default function ProfileScreen() {
     { id: 'favorites', label: t.profile.menu.favorites, Icon: HeartIcon, iconColor: '#EF4444', route: '/favorites' },
     { id: 'friends', label: t.profile.menu.friends, Icon: UsersIcon, iconColor: '#00CFFF', route: '/friends-list' },
     { id: 'friendRequests', label: t.profile.menu.friendRequests, Icon: MailIcon, iconColor: '#F59E0B', route: '/friend-requests' },
+    { id: 'refer', label: t.profile.menu.referEarn, Icon: GiftIcon, iconColor: '#22C55E', route: '/refer-earn' },
     // Teams moved to MENU_SOON — the feature is functionally ready
     // (BE endpoints + FE screens shipped) but the post-create
     // in-chat invite flow + voice integration + presence aren't,
@@ -341,7 +342,6 @@ export default function ProfileScreen() {
     { id: 'sessionInvites', label: t.profile.menu.sessionInvites, Icon: GamepadIcon, iconColor: '#FF34E0', route: '/session-invites', soon: true },
     { id: 'rating', label: t.profile.menu.rating, Icon: TrophyIcon, iconColor: '#F59E0B', route: '/rating', soon: true },
     { id: 'stats', label: t.profile.menu.stats, Icon: ChartIcon, iconColor: '#3B82F6', route: '/statistics', soon: true },
-    { id: 'refer', label: t.profile.menu.referEarn, Icon: GiftIcon, iconColor: '#22C55E', route: '/refer-earn', soon: true },
   ];
 
   const renderMenuRow = (item: MenuItem, isLast: boolean) => {

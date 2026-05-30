@@ -1,5 +1,34 @@
+import type { AxiosRequestConfig } from 'axios';
 import { apiGet, apiPost, apiDelete, authEvents } from '../client';
 import type { ApiResource, Pc } from '../types';
+
+/**
+ * POST helper that attaches a caller-supplied Idempotency-Key header
+ * ONLY when a key is actually provided.
+ *
+ * Why the conditional arg-count: the booking/QR write paths must let a
+ * retry reuse the SAME key (see client.ts::generateIdempotencyKey). But
+ * the rest of the service calls these functions with no key, and the
+ * request interceptor already mints a per-request fallback. When no key
+ * is passed we forward exactly two args to `apiPost`, keeping the call
+ * shape byte-identical to the pre-change form — so existing Jest
+ * assertions like `toHaveBeenCalledWith(url, body)` (which fail on an
+ * extra explicit `undefined` third arg) stay green. Only the key'd call
+ * sites get the third config argument.
+ */
+function postWithIdempotency<T>(
+  url: string,
+  body: unknown,
+  idempotencyKey?: string,
+): Promise<T> {
+  if (!idempotencyKey) {
+    return apiPost<T>(url, body);
+  }
+  const config: AxiosRequestConfig = {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  };
+  return apiPost<T>(url, body, config);
+}
 
 /**
  * Short-TTL cache for `/mobile/pcs`.
@@ -41,8 +70,14 @@ export function invalidatePcsCache(): void {
 // subscribed — explicit user-initiated logout left the cache warm,
 // so a fresh login as a different user could briefly read the
 // previous user's PCs from the 30s TTL window.
+//
+// `auth:tenant-switched` also invalidates: PCs are tenant-scoped, so
+// switching the active club must flush the previous club's grid (this
+// used to ride on `auth:logout`, which switchClub emitted — see the
+// AuthEvent docblock in `client.ts` for why that coupling was removed).
 authEvents.on('auth:unauthorized', invalidatePcsCache);
 authEvents.on('auth:logout', invalidatePcsCache);
+authEvents.on('auth:tenant-switched', invalidatePcsCache);
 
 /**
  * Wire shape of one PC item in `GET /mobile/pcs`. The BE nests the
@@ -133,6 +168,17 @@ interface BookBody {
    * already-paid package.
    */
   package_id?: number | null;
+  /**
+   * Reservation deposit in UZS. Set when the user is booking
+   * against their club balance (hourly mode) — the BE pulls this
+   * amount out of `clients.balance` and parks it in
+   * `clients.deposit_held` until the session actually starts (or
+   * the booking is voluntarily cancelled). Refund happens
+   * automatically in `ClientSessionService::startOrResumeShellSession`.
+   * Pass 0 or omit for package mode (the package itself is the
+   * commitment — no separate hold).
+   */
+  deposit_amount?: number;
 }
 
 /**
@@ -310,9 +356,29 @@ export async function getPcGrid(): Promise<PcGridResponse> {
   return res.data;
 }
 
-/** Bitta PC bron qilish */
-export async function bookPc(pcId: number, body?: BookBody): Promise<BookPcResponse> {
-  const res = await apiPost<ApiResource<BookPcResponse>>(`/mobile/pcs/${pcId}/book`, body || {});
+/**
+ * Bitta PC bron qilish.
+ *
+ * `idempotencyKey` (optional): a stable UUID the caller mints ONCE per
+ * booking attempt and reuses across retries / accidental double-taps.
+ * When present it's sent as the `Idempotency-Key` header so the BE can
+ * recognise a retried POST and return the original PcBooking instead of
+ * creating a second reservation + double-debiting the deposit. When
+ * omitted, the request interceptor falls back to a per-request key
+ * (fine for non-money callers). See `app/payment.tsx::onConfirm` for
+ * the producing side and the `generateIdempotencyKey` docblock in
+ * `lib/api/client.ts` for the contract.
+ */
+export async function bookPc(
+  pcId: number,
+  body?: BookBody,
+  idempotencyKey?: string,
+): Promise<BookPcResponse> {
+  const res = await postWithIdempotency<ApiResource<BookPcResponse>>(
+    `/mobile/pcs/${pcId}/book`,
+    body || {},
+    idempotencyKey,
+  );
   // A successful book flips the seat from free → reserved on the BE.
   // Drop the cache so the next zone-select / seat-select read shows
   // the new state.
@@ -409,9 +475,64 @@ export async function unbookPc(pcId: number): Promise<{ ok: boolean }> {
  * validation on every call. The new signature mirrors the BE
  * validator. Callers parse the QR sticker payload into the two
  * components — see qr-scan.tsx for the format `<pcId>:<code>`.
+ *
+ * `idempotencyKey` (optional): opening a PC by QR starts a billable
+ * session server-side. A flaky network mid-POST + a user re-tapping
+ * the freshly-decoded code could start two sessions / double the
+ * opening charge. The caller (`app/qr-scan.tsx::handleScanned`) mints
+ * one stable key per scan and passes it here so the BE de-dups a
+ * retried open. Omitting it falls back to a per-request key in the
+ * interceptor. See the `generateIdempotencyKey` docblock in
+ * `lib/api/client.ts`.
  */
-export async function openByQr(body: OpenByQrBody): Promise<{ ok: boolean; pc?: Pc }> {
-  const res = await apiPost<ApiResource<{ ok: boolean; pc?: Pc }>>('/mobile/pcs/open', body);
+export async function openByQr(
+  body: OpenByQrBody,
+  idempotencyKey?: string,
+): Promise<{ ok: boolean; pc?: Pc }> {
+  const res = await postWithIdempotency<ApiResource<{ ok: boolean; pc?: Pc }>>(
+    '/mobile/pcs/open',
+    body,
+    idempotencyKey,
+  );
+  return res.data;
+}
+
+/**
+ * Claim a Shell-displayed PC by its one-time claim id.
+ *
+ * Flow (mobile QR login — Shell side): the kiosk Shell renders a login
+ * QR encoding `nexora://claim?cid=<uuid>`. The already-signed-in client
+ * scans it here; we POST the `claim_id` to the BE, which binds this
+ * client to the pending Shell session (auth via the per-tenant
+ * `client_token` — the URL prefix `/mobile/pcs` already routes the
+ * client token through the request interceptor). The Shell polls the
+ * claim id and logs the client in once the bind lands.
+ *
+ * Distinct from `openByQr`: that path opens a PC the client physically
+ * sits at by its printed sticker `code` and starts a billable session
+ * immediately. `claimPc` only links the client to a Shell login QR —
+ * the Shell drives the session start after the bind.
+ *
+ * `idempotencyKey` (optional): a re-tap or flaky-network retry of the
+ * same scan must not register two binds. The caller
+ * (`app/qr-scan.tsx::handleScanned`) mints one stable key per scanned
+ * claim id; the BE de-dups a retried POST. Omitting it falls back to a
+ * per-request key in the interceptor — see the `generateIdempotencyKey`
+ * docblock in `lib/api/client.ts`.
+ *
+ * BE contract: `POST /mobile/qr-claim` body `{ claim_id }` →
+ * `{ ok: true }` on success, or a 4xx with a `message`/`errors` payload
+ * (`expired` / `not_found`) that `getErrorMessage` surfaces.
+ */
+export async function claimPc(
+  claimId: string,
+  idempotencyKey?: string,
+): Promise<{ ok: boolean }> {
+  const res = await postWithIdempotency<ApiResource<{ ok: boolean }>>(
+    '/mobile/qr-claim',
+    { claim_id: claimId },
+    idempotencyKey,
+  );
   return res.data;
 }
 
